@@ -4,10 +4,8 @@ import (
 	"time"
 )
 
-func Spool(input chan *FileEvent,
-	output chan []*FileEvent,
-	max_size uint64,
-	idle_timeout time.Duration) {
+func Spool(input chan *FileEvent, output chan []*FileEvent, max_size uint64, idle_timeout time.Duration) {
+
 	// heartbeat periodically. If the last flush was longer than
 	// 'idle_timeout' time ago, then we'll force a flush to prevent us from
 	// holding on to spooled events for too long.

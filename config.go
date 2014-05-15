@@ -5,6 +5,8 @@ import (
 	"log"
 	"os"
 	"time"
+	"io/ioutil"
+	"fmt"
 )
 
 type Config struct {
@@ -27,41 +29,39 @@ type FileConfig struct {
 	//DeadTime time.Duration `json:"dead time"`
 }
 
-func LoadConfig(path string) (config Config, err error) {
-	config_file, err := os.Open(path)
-	if err != nil {
-		log.Printf("Failed to open config file '%s': %s\n", path, err)
-		return
+func LoadConfig (filename string)  (*Config, error) {
+	fileinfo, e := os.Stat(filename)
+	if e != nil {
+		return onError(e, "error accessing fileinfo", filename)
 	}
 
-	fi, _ := config_file.Stat()
-	if fi.Size() > (10 << 20) {
-		log.Printf("Config file too large? Aborting, just in case. '%s' is %d bytes\n",
-			path, fi)
-		return
+	filesize := fileinfo.Size()
+	if filesize > (10 << 20) {
+		return onError(e, fmt.Sprint("Config file too large? Aborting, just in case ('%s' is %d bytes)", filename, filesize), filename)
 	}
 
-	buffer := make([]byte, fi.Size())
-	_, err = config_file.Read(buffer)
-	log.Printf("%s\n", buffer)
+	buffer, e := ioutil.ReadFile(filename)
+	if e != nil {
+		return onError (e, "error reading file", filename)
+	}
 
-	err = json.Unmarshal(buffer, &config)
-	if err != nil {
-		log.Printf("Failed unmarshalling json: %s\n", err)
-		return
+	var config Config
+	e = json.Unmarshal(buffer, config)
+	if e != nil {
+		return onError(e, fmt.Sprint("json unmarshal fault for buffer <%s>", buffer) ,filename)
 	}
 
 	if config.Network.Timeout == 0 {
 		config.Network.Timeout = 15
 	}
-
 	config.Network.timeout = time.Duration(config.Network.Timeout) * time.Second
 
-	//for _, fileconfig := range config.Files {
-	//if fileconfig.DeadTime == 0 {
-	//fileconfig.DeadTime = 24 * time.Hour
-	//}
-	//}
+	return &config, nil
+}
 
-	return
+func onError (e error, format, filename string) (*Config, error) {
+	_fmt := format + " - e: %s"
+	err := fmt.Sprintf(_fmt, e)
+	log.Print(err)
+	return nil, fmt.Errorf("failed to load config file '%s' due to error <%s>", filename, e)
 }

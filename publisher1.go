@@ -27,7 +27,7 @@ var hostname string
 var hostport_re, _ = regexp.Compile("^(.+):([0-9]+)$")
 
 func init() {
-	log.Printf("publisher init\n")
+	//	log.Printf("publisher init\n")
 	hostname, _ = os.Hostname()
 	rand.Seed(time.Now().UnixNano())
 }
