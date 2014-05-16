@@ -97,8 +97,9 @@ func main() {
 				// todo: find out if emitting log would be ok to signal profile end.(joubin)
 			}()
 
-			time.Sleep(cpu_profile_period_secs)
+			<-time.After(cpu_profile_period_secs)
 			pprof.StopCPUProfile()
+
 			panic("done") // REVU don't understand &| like panics in go routines. todo: fix (joubin)
 		}()
 	}

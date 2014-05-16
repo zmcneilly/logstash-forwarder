@@ -11,6 +11,11 @@ import (
 func Prospect(fileconfig FileConfig, output chan *FileEvent) {
 	fileinfo := make(map[string]os.FileInfo)
 
+	// REVU: (joubin) don't see why this is done here in this func
+	//       given that it is handed off to a go routine
+	//       and we want to keep those focused on 1 or n iterative tasks.
+	// todo: move path cleanups to before startup time.
+
 	// Handle any "-" (stdin) paths
 	for i, path := range fileconfig.Paths {
 		if path == "-" {
