@@ -37,7 +37,7 @@ func (h *Harvester) Harvest(output chan *FileEvent) {
 	log.Printf("Current file offset: %d\n", offset)
 
 	// TODO(sissel): Make the buffer size tunable at start-time
-	reader := bufio.NewReaderSize(h.file, 16<<10) // 16kb buffer by default
+	reader := bufio.NewReaderSize(h.file, harvester_buffer_size)
 
 	var read_timeout = 10 * time.Second
 	last_read_time := time.Now()

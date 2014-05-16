@@ -13,8 +13,12 @@ const no_profiling = ""
 const def_idle_timeout_secs = 5 * time.Second
 const cpu_profile_period_secs = 60 * time.Second
 
+// harvester buffer size 16kb buffer by default
+const def_harverst_buffer_size = 16 << 10
+
 var cpu_profile_fname string
 var max_spool_size uint64
+var harvester_buffer_size int
 var idle_timeout time.Duration
 var config_fname string
 var use_syslog bool
@@ -24,7 +28,8 @@ func init() {
 
 	flag.StringVar(&config_fname, "config", "", "The config file to load (required)")
 	flag.StringVar(&cpu_profile_fname, "cpuprofile", no_profiling, "write cpu profile to file")
-	flag.Uint64Var(&max_spool_size, "spool-size", uint64(1024), "Maximum number of events to spool before a flush is forced.")
+	flag.Uint64Var(&max_spool_size, "spool-size", uint64(1024), "Maximum number of events to spool before a flush is forced")
+	flag.IntVar(&harvester_buffer_size, "harvest-size", def_harverst_buffer_size, "harvester buffer size")
 	flag.DurationVar(&idle_timeout, "idle-flush-time", def_idle_timeout_secs, "Maximum time to wait for a full spool before flushing anyway")
 	flag.BoolVar(&use_syslog, "log-to-syslog", false, "Log to syslog instead of stdout")
 	flag.BoolVar(&seek_from_head, "from-beginning", false, "Read new files from the beginning, instead of the end")
