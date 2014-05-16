@@ -2,11 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"time"
-	"io/ioutil"
-	"fmt"
 )
 
 type Config struct {
@@ -29,7 +29,7 @@ type FileConfig struct {
 	//DeadTime time.Duration `json:"dead time"`
 }
 
-func LoadConfig (filename string)  (*Config, error) {
+func LoadConfig(filename string) (*Config, error) {
 	fileinfo, e := os.Stat(filename)
 	if e != nil {
 		return onError(e, "error accessing fileinfo", filename)
@@ -42,13 +42,13 @@ func LoadConfig (filename string)  (*Config, error) {
 
 	buffer, e := ioutil.ReadFile(filename)
 	if e != nil {
-		return onError (e, "error reading file", filename)
+		return onError(e, "error reading file", filename)
 	}
 
 	var config Config
 	e = json.Unmarshal(buffer, config)
 	if e != nil {
-		return onError(e, fmt.Sprint("json unmarshal fault for buffer <%s>", buffer) ,filename)
+		return onError(e, fmt.Sprint("json unmarshal fault for buffer <%s>", buffer), filename)
 	}
 
 	if config.Network.Timeout == 0 {
@@ -59,7 +59,7 @@ func LoadConfig (filename string)  (*Config, error) {
 	return &config, nil
 }
 
-func onError (e error, format, filename string) (*Config, error) {
+func onError(e error, format, filename string) (*Config, error) {
 	_fmt := format + " - e: %s"
 	err := fmt.Sprintf(_fmt, e)
 	log.Print(err)

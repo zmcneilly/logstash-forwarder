@@ -2,11 +2,11 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"runtime/pprof"
 	"time"
-	"fmt"
 )
 
 const no_profiling = ""
@@ -80,9 +80,9 @@ func main() {
 
 	initsplash()
 
-	// REVU: check semantics of page nil to signal shutdown
+	// REVU: check semantics of nil event to signal shutdown
 	// TODO (joubin)
-	event_chan := make(chan *FileEvent, 16)
+	event_chan := make(chan *FileEvent, 16) // REVU: magic number ? todo: find out (joubin)
 	publisher_chan := make(chan []*FileEvent, 1)
 	registrar_chan := make(chan []*FileEvent, 1)
 
@@ -93,9 +93,13 @@ func main() {
 		}
 		pprof.StartCPUProfile(f)
 		go func() {
+			defer func() {
+				// todo: find out if emitting log would be ok to signal profile end.(joubin)
+			}()
+
 			time.Sleep(cpu_profile_period_secs)
 			pprof.StopCPUProfile()
-			panic("done") // REVU (joubin) n
+			panic("done") // REVU don't understand &| like panics in go routines. todo: fix (joubin)
 		}()
 	}
 
@@ -121,6 +125,7 @@ func main() {
 	}
 
 	// Harvesters dump events into the spooler.
+	// REVU: todo: find out how the shutdown behavior is supposed to look.
 	go Spool(event_chan, publisher_chan, max_spool_size, idle_timeout)
 
 	go Publishv1(publisher_chan, registrar_chan, &config.Network)
