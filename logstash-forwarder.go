@@ -57,8 +57,6 @@ func initsplash() {
 
 func main() {
 
-	/* /// configure /////////////////////////////// */
-
 	// parse flags and emit the startup splash
 	// enforce required cmd-line args
 
@@ -78,7 +76,7 @@ func main() {
 		log.Fatalf("fatal error: %s - will exit.", e)
 	}
 
-	/* /// initialize ////////////////////////////// */
+	/* initialize */
 
 	initsplash()
 
@@ -115,7 +113,7 @@ func main() {
 		configureSyslog()
 	}
 
-	/* /// start /////////////////////////////////// */
+	/* start */
 
 	// Prospect the globs/paths given on the command line and launch harvesters
 	for _, fileconfig := range config.Files {
