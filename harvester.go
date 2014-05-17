@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 	"log"
 	"os" // for File and friends
@@ -15,30 +16,60 @@ type Harvester struct {
 	offset int64
 	file   *os.File
 
-	output chan *FileEvent
+	output chan<- *FileEvent
+	ctl_ch chan int
+	CTL    chan<- int
+	sig_ch chan interface{}
+	SIG    <-chan interface{}
 }
 
-func newHarvester(path string, fields map[string]string) *Harvester {
-	return newHarvesterAtOffset(path, fields, 0)
-}
-func newHarvesterAtOffset(path string, fields map[string]string, offset int64) *Harvester {
-	return &Harvester{path: path, fields: fields, offset: offset}
-}
+const (
+	read_timeout       = 10 * time.Second
+	file_read_deadline = 24 * time.Hour
+)
 
-// Harvester.Harverst
-// reads a file, sends events to the spooler
-// via output channel.
-func (h *Harvester) Harvest(output chan *FileEvent) {
-	if h.offset > 0 {
-		log.Printf("Starting harvester at position %d: %s\n", h.offset, h.path)
-	} else {
-		log.Printf("Starting harvester: %s\n", h.path)
+// create new Harvester
+// output: channel to emit harvest FileEvent
+// path: harvest file
+// fields: file fields
+func newHarvester(output chan<- *FileEvent, path string, fields map[string]string) *Harvester {
+	ctl_ch := make(chan int)
+	sig_ch := make(chan interface{})
+	return &Harvester{
+		path:   path,
+		fields: fields,
+		output: output,
+		ctl_ch: ctl_ch,
+		CTL:    ctl_ch,
+		sig_ch: sig_ch,
+		SIG:    sig_ch,
 	}
+}
+
+// run harvester at offset. Also see HarvestAtOffset(int64)
+func (h *Harvester) Harvest() {
+	h.HarvestAtOffset(0)
+}
+
+// run harvester.
+// Reads lines from associated file until EOF timeout
+func (h *Harvester) HarvestAtOffset(init_offset int64) {
+	h.offset = init_offset
+	loginfo := ""
+	if h.offset > 0 {
+		loginfo = fmt.Sprintf("at postion %d", h.offset)
+	}
+	log.Printf("Harvesting file %s %s\n", h.path, loginfo)
 
 	h.open()
-	info, _ := h.file.Stat() // TODO(sissel): Check error
+
+	info, err := h.file.Stat()
+	if err != nil { // can only be a os.PathErr
+		log.Printf("unexpected error reading %s - %s", h.path, err)
+		//		h.sig_ch<- err // REVU: should post its error - TODO: wire this stuff up
+		return
+	}
 	defer h.file.Close()
-	//info, _ := file.Stat()
 
 	var line uint64 = 0 // Ask registrar about the line number
 
@@ -50,35 +81,30 @@ func (h *Harvester) Harvest(output chan *FileEvent) {
 	// TODO(sissel): Make the buffer size tunable at start-time
 	reader := bufio.NewReaderSize(h.file, harvester_buffer_size)
 
-	var read_timeout = 10 * time.Second
+	var deadline time.Time
 	last_read_time := time.Now()
 	for {
-		text, err := h.readline(reader, read_timeout)
-
-		if err != nil {
-			if err == io.EOF {
-				// timed out waiting for data, got eof.
-				// Check to see if the file was truncated
-				info, _ := h.file.Stat()
-				if info.Size() < offset {
-					log.Printf("File truncated, seeking to beginning: %s\n", h.path)
-					h.file.Seek(0, os.SEEK_SET)
-					offset = 0
-				} else if age := time.Since(last_read_time); age > (24 * time.Hour) {
-					// if last_read_time was more than 24 hours ago, this file is probably
-					// dead. Stop watching it.
-					// TODO(sissel): Make this time configurable
-					// This file is idle for more than 24 hours. Give up and stop harvesting.
-					log.Printf("Stopping harvest of %s; last change was %d seconds ago\n", h.path, age.Seconds())
-					return
-				}
-				continue
-			} else {
-				log.Printf("Unexpected state reading from %s; error: %s\n", h.path, err)
+		text, err := h.readline(reader)
+		switch err {
+		case io.EOF: // timed out waiting for data, got eof.
+			// Check to see if the file was truncated
+			info, _ := h.file.Stat()
+			if info.Size() < offset {
+				log.Printf("File truncated, seeking to beginning: %s\n", h.path)
+				h.file.Seek(0, os.SEEK_SET)
+				offset = 0
+			} else if time.Now().After(deadline) {
+				// assume file is probably dead. Stop harvesting it
+				log.Printf("Stopping harvest of %s; last change was %d seconds ago\n", h.path, time.Now().Sub(last_read_time))
 				return
 			}
+			continue
+		default: // unexpected error
+			log.Printf("Unexpected state reading from %s; error: %s\n", h.path, err)
+			return
 		}
 		last_read_time = time.Now()
+		deadline = last_read_time.Add(file_read_deadline)
 
 		line++
 		event := &FileEvent{
@@ -89,9 +115,19 @@ func (h *Harvester) Harvest(output chan *FileEvent) {
 			Fields:   &h.fields,
 			fileinfo: &info,
 		}
-		offset += int64(len(*event.Text)) + 1 // +1 because of the line terminator
+		offset += int64(len(*event.Text)) + 1 // +1 because of the line terminator - todo revu for all os
 
-		output <- event // ship the new event downstream
+		h.output <- event // ship the new event downstream
+
+		// REVU: all active components should do this. todo
+		// poll ctl channel for directive
+		select {
+		case <-h.ctl_ch:
+			// TODO: read the ctl code and differentiate between STAT and SHUTDOWN
+			// REVU: for now input on ctl channel interpreted as stop
+			break
+		default:
+		}
 	} /* forever */
 }
 
@@ -127,26 +163,29 @@ func (h *Harvester) open() *os.File {
 	return h.file
 }
 
-func (h *Harvester) readline(reader *bufio.Reader, eof_timeout time.Duration) (*string, error) {
+// attempts to read and return a line from harvested file.
+// error is raised on EOF timeout or general io error.
+func (h *Harvester) readline(reader *bufio.Reader) (*string, error) {
+
+	deadline := time.Now().Add(read_timeout)
+
 	var buffer bytes.Buffer
-	start_time := time.Now()
 	for {
 		segment, is_partial, err := reader.ReadLine()
+		switch err {
+		case io.EOF:
+			time.Sleep(harvester_eof_timeout) // TODO(sissel): Implement backoff
 
-		if err != nil {
-			if err == io.EOF {
-				time.Sleep(1 * time.Second) // TODO(sissel): Implement backoff
-
-				// Give up waiting for data after a certain amount of time.
-				// If we time out, return the error (eof)
-				if time.Since(start_time) > eof_timeout {
-					return nil, err
-				}
-				continue
-			} else {
-				log.Println(err)
-				return nil, err // TODO(sissel): don't do this?
+			// Give up waiting for data after a certain amount of time.
+			// If we time out, return the error (eof)
+			if time.Now().After(deadline) {
+				log.Println("Harvester timeout reading line")
+				return nil, err
 			}
+			continue
+		default:
+			log.Println(err)
+			return nil, err // TODO(sissel): don't do this?
 		}
 
 		// TODO(sissel): if buffer exceeds a certain length, maybe report an error condition? chop it?
@@ -154,11 +193,10 @@ func (h *Harvester) readline(reader *bufio.Reader, eof_timeout time.Duration) (*
 
 		if !is_partial {
 			// If we got a full line, return the whole line.
-			str := new(string)
-			*str = buffer.String()
-			return str, nil
+			str := buffer.String()
+			return &str, nil
 		}
-	} /* forever read chunks */
+	} /* until full line read or err/timeout */
 
 	return nil, nil
 }

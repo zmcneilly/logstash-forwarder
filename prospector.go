@@ -14,8 +14,7 @@ func Prospect(fileconfig FileConfig, output chan *FileEvent) {
 	// Handle any stdin paths
 	for i, path := range fileconfig.Paths {
 		if path == path_stdin {
-			harvester := newHarvester(path, fileconfig.Fields)
-			go harvester.Harvest(output)
+			go newHarvester(output, path, fileconfig.Fields).Harvest()
 
 			// Remove it from the file list
 			fileconfig.Paths = append(fileconfig.Paths[:i], fileconfig.Paths[i+1:]...)
@@ -60,8 +59,8 @@ func resume_tracking(fileconfig FileConfig, fileinfo map[string]os.FileInfo, out
 				for _, pathglob := range fileconfig.Paths {
 					match, _ := filepath.Match(pathglob, path)
 					if match {
-						harvester := newHarvesterAtOffset(path, fileconfig.Fields, state.Offset)
-						go harvester.Harvest(output)
+						// run harvester at last offset
+						go newHarvester(output, path, fileconfig.Fields).HarvestAtOffset(state.Offset)
 						break
 					}
 				}
@@ -119,15 +118,13 @@ func prospector_scan(path string, fields map[string]string, fileinfo map[string]
 			} else {
 				// Most likely a new file. Harvest it!
 				log.Printf("Launching harvester on new file: %s\n", file)
-				harvester := newHarvester(path, fields)
-				go harvester.Harvest(output)
+				go newHarvester(output, path, fields).Harvest()
 			}
 		} else if !is_fileinfo_same(lastinfo, info) {
 			log.Printf("Launching harvester on rotated file: %s\n", file)
 			// TODO(sissel): log 'file rotated' or osmething
 			// Start a harvester on the path; a new file appeared with the same name.
-			harvester := newHarvester(path, fields)
-			go harvester.Harvest(output)
+			go newHarvester(output, path, fields).Harvest()
 		}
 	} // for each file matched by the glob
 }
