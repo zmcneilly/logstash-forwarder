@@ -10,20 +10,29 @@ import (
 )
 
 type Harvester struct {
-	Path   string
-	Fields map[string]string
-	Offset int64
+	path   string
+	fields map[string]string
+	offset int64
 	file   *os.File
+
+	output chan *FileEvent
+}
+
+func newHarvester(path string, fields map[string]string) *Harvester {
+	return newHarvesterAtOffset(path, fields, 0)
+}
+func newHarvesterAtOffset(path string, fields map[string]string, offset int64) *Harvester {
+	return &Harvester{path: path, fields: fields, offset: offset}
 }
 
 // Harvester.Harverst
 // reads a file, sends events to the spooler
 // via output channel.
 func (h *Harvester) Harvest(output chan *FileEvent) {
-	if h.Offset > 0 {
-		log.Printf("Starting harvester at position %d: %s\n", h.Offset, h.Path)
+	if h.offset > 0 {
+		log.Printf("Starting harvester at position %d: %s\n", h.offset, h.path)
 	} else {
-		log.Printf("Starting harvester: %s\n", h.Path)
+		log.Printf("Starting harvester: %s\n", h.path)
 	}
 
 	h.open()
@@ -52,7 +61,7 @@ func (h *Harvester) Harvest(output chan *FileEvent) {
 				// Check to see if the file was truncated
 				info, _ := h.file.Stat()
 				if info.Size() < offset {
-					log.Printf("File truncated, seeking to beginning: %s\n", h.Path)
+					log.Printf("File truncated, seeking to beginning: %s\n", h.path)
 					h.file.Seek(0, os.SEEK_SET)
 					offset = 0
 				} else if age := time.Since(last_read_time); age > (24 * time.Hour) {
@@ -60,12 +69,12 @@ func (h *Harvester) Harvest(output chan *FileEvent) {
 					// dead. Stop watching it.
 					// TODO(sissel): Make this time configurable
 					// This file is idle for more than 24 hours. Give up and stop harvesting.
-					log.Printf("Stopping harvest of %s; last change was %d seconds ago\n", h.Path, age.Seconds())
+					log.Printf("Stopping harvest of %s; last change was %d seconds ago\n", h.path, age.Seconds())
 					return
 				}
 				continue
 			} else {
-				log.Printf("Unexpected state reading from %s; error: %s\n", h.Path, err)
+				log.Printf("Unexpected state reading from %s; error: %s\n", h.path, err)
 				return
 			}
 		}
@@ -73,11 +82,11 @@ func (h *Harvester) Harvest(output chan *FileEvent) {
 
 		line++
 		event := &FileEvent{
-			Source:   &h.Path,
+			Source:   &h.path,
 			Offset:   offset,
 			Line:     line,
 			Text:     text,
-			Fields:   &h.Fields,
+			Fields:   &h.fields,
 			fileinfo: &info,
 		}
 		offset += int64(len(*event.Text)) + 1 // +1 because of the line terminator
@@ -88,18 +97,18 @@ func (h *Harvester) Harvest(output chan *FileEvent) {
 
 func (h *Harvester) open() *os.File {
 	// handle special case of harvesting stdin
-	if h.Path == path_stdin {
+	if h.path == path_stdin {
 		h.file = os.Stdin
 		return h.file
 	}
 
 	for {
 		var err error
-		h.file, err = os.Open(h.Path)
+		h.file, err = os.Open(h.path)
 
 		if err != nil {
 			// retry on failure.
-			log.Printf("Failed opening %s: %s\n", h.Path, err)
+			log.Printf("Failed opening %s: %s\n", h.path, err)
 			time.Sleep(5 * time.Second)
 		} else {
 			break
@@ -107,8 +116,8 @@ func (h *Harvester) open() *os.File {
 	}
 
 	// TODO(sissel): Only seek if the file is a file, not a pipe or socket.
-	if h.Offset > 0 {
-		h.file.Seek(h.Offset, os.SEEK_SET)
+	if h.offset > 0 {
+		h.file.Seek(h.offset, os.SEEK_SET)
 	} else if seek_from_head {
 		h.file.Seek(0, os.SEEK_SET)
 	} else {
