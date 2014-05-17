@@ -10,13 +10,15 @@ import (
 )
 
 type Harvester struct {
-	Path   string /* the file path to harvest */
+	Path   string
 	Fields map[string]string
 	Offset int64
-
-	file *os.File /* the file being watched */
+	file   *os.File
 }
 
+// Harvester.Harverst
+// reads a file, sends events to the spooler
+// via output channel.
 func (h *Harvester) Harvest(output chan *FileEvent) {
 	if h.Offset > 0 {
 		log.Printf("Starting harvester at position %d: %s\n", h.Offset, h.Path)
@@ -85,8 +87,8 @@ func (h *Harvester) Harvest(output chan *FileEvent) {
 }
 
 func (h *Harvester) open() *os.File {
-	// Special handling that "-" means to read from standard input
-	if h.Path == "-" {
+	// handle special case of harvesting stdin
+	if h.Path == path_stdin {
 		h.file = os.Stdin
 		return h.file
 	}

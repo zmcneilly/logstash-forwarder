@@ -11,14 +11,9 @@ import (
 func Prospect(fileconfig FileConfig, output chan *FileEvent) {
 	fileinfo := make(map[string]os.FileInfo)
 
-	// REVU: (joubin) don't see why this is done here in this func
-	//       given that it is handed off to a go routine
-	//       and we want to keep those focused on 1 or n iterative tasks.
-	// todo: move path cleanups to before startup time.
-
-	// Handle any "-" (stdin) paths
+	// Handle any stdin paths
 	for i, path := range fileconfig.Paths {
-		if path == "-" {
+		if path == path_stdin {
 			harvester := Harvester{Path: path, Fields: fileconfig.Fields}
 			go harvester.Harvest(output)
 
@@ -86,7 +81,7 @@ func prospector_scan(path string, fields map[string]string, fileinfo map[string]
 	}
 
 	// If the glob matches nothing, use the path itself as a literal.
-	if len(matches) == 0 && path == "-" {
+	if len(matches) == 0 && path == path_stdin {
 		matches = append(matches, path)
 	}
 

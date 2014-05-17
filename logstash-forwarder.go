@@ -9,12 +9,13 @@ import (
 	"time"
 )
 
-const no_profiling = ""
-const def_idle_timeout_secs = 5 * time.Second
-const cpu_profile_period_secs = 60 * time.Second
-
-// harvester buffer size 16kb buffer by default
-const def_harverst_buffer_size = 16 << 10
+const (
+	no_profiling             = ""
+	path_stdin               = "-"
+	def_harverst_buffer_size = 16 << 10 /* harvester buffer size 16kb buffer by default */
+	def_idle_timeout_secs    = 5 * time.Second
+	cpu_profile_period_secs  = 60 * time.Second
+)
 
 var cpu_profile_fname string
 var max_spool_size uint64

@@ -10,8 +10,8 @@ func Registrar(input chan []*FileEvent) {
 		log.Printf("Registrar received %d events\n", len(events))
 		// Take the last event found for each file source
 		for _, event := range events {
-			// skip stdin
-			if *event.Source == "-" {
+			// skip stdin sources
+			if *event.Source == path_stdin {
 				continue
 			}
 			// have to dereference the FileInfo here because os.FileInfo is an
