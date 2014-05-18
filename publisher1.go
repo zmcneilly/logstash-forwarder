@@ -63,7 +63,7 @@ func Publishv1(input chan []*FileEvent,
 			// basically everything is slow or down. We'll want to ratchet up the
 			// timeout value slowly until things improve, then ratchet it down once
 			// things seem healthy.
-			log.Printf("Socket error, will reconnect: %s\n", err)
+			log.Printf("[publisher] Socket error, will reconnect: %s\n", err)
 			time.Sleep(1 * time.Second)
 			socket.Close()
 			socket = connect(config)
@@ -110,7 +110,7 @@ func Publishv1(input chan []*FileEvent,
 			for ackbytes != 6 {
 				n, err := socket.Read(response[len(response):cap(response)])
 				if err != nil {
-					log.Printf("Read error looking for ack: %s\n", err)
+					log.Printf("[publisher] Read error looking for ack: %s\n", err)
 					socket.Close()
 					socket = connect(config)
 					continue SendPayload // retry sending on new connection
@@ -133,7 +133,7 @@ func connect(config *NetworkConfig) (socket *tls.Conn) {
 	var tlsconfig tls.Config
 
 	if len(config.SSLCertificate) > 0 && len(config.SSLKey) > 0 {
-		log.Printf("Loading client ssl certificate: %s and %s\n",
+		log.Printf("[publisher] Loading client ssl certificate: %s and %s\n",
 			config.SSLCertificate, config.SSLKey)
 		cert, err := tls.LoadX509KeyPair(config.SSLCertificate, config.SSLKey)
 		if err != nil {
@@ -143,25 +143,25 @@ func connect(config *NetworkConfig) (socket *tls.Conn) {
 	}
 
 	if len(config.SSLCA) > 0 {
-		log.Printf("Setting trusted CA from file: %s\n", config.SSLCA)
+		log.Printf("[publisher] Setting trusted CA from file: %s\n", config.SSLCA)
 		tlsconfig.RootCAs = x509.NewCertPool()
 
 		pemdata, err := ioutil.ReadFile(config.SSLCA)
 		if err != nil {
-			log.Fatalf("Failure reading CA certificate: %s\n", err)
+			log.Fatalf("[publisher] Failure reading CA certificate: %s\n", err)
 		}
 
 		block, _ := pem.Decode(pemdata)
 		if block == nil {
-			log.Fatalf("Failed to decode PEM data, is %s a valid cert?\n", config.SSLCA)
+			log.Fatalf("[publisher] Failed to decode PEM data, is %s a valid cert?\n", config.SSLCA)
 		}
 		if block.Type != "CERTIFICATE" {
-			log.Fatalf("This is not a certificate file: %s\n", config.SSLCA)
+			log.Fatalf("[publisher] This is not a certificate file: %s\n", config.SSLCA)
 		}
 
 		cert, err := x509.ParseCertificate(block.Bytes)
 		if err != nil {
-			log.Fatalf("Failed to parse a certificate: %s\n", config.SSLCA)
+			log.Fatalf("[publisher] Failed to parse a certificate: %s\n", config.SSLCA)
 		}
 		tlsconfig.RootCAs.AddCert(cert)
 	}
@@ -171,14 +171,14 @@ func connect(config *NetworkConfig) (socket *tls.Conn) {
 		hostport := config.Servers[rand.Int()%len(config.Servers)]
 		submatch := hostport_re.FindSubmatch([]byte(hostport))
 		if submatch == nil {
-			log.Fatalf("Invalid host:port given: %s", hostport)
+			log.Fatalf("[publisher] Invalid host:port given: %s", hostport)
 		}
 		host := string(submatch[1])
 		port := string(submatch[2])
 		addresses, err := net.LookupHost(host)
 
 		if err != nil {
-			log.Printf("DNS lookup failure \"%s\": %s\n", host, err)
+			log.Printf("[publisher] DNS lookup failure \"%s\": %s\n", host, err)
 			time.Sleep(1 * time.Second)
 			continue
 		}
@@ -186,11 +186,11 @@ func connect(config *NetworkConfig) (socket *tls.Conn) {
 		address := addresses[rand.Int()%len(addresses)]
 		addressport := fmt.Sprintf("%s:%s", address, port)
 
-		log.Printf("Connecting to %s (%s) \n", addressport, host)
+		log.Printf("[publisher] Connecting to %s (%s) \n", addressport, host)
 
 		tcpsocket, err := net.DialTimeout("tcp", addressport, config.timeout)
 		if err != nil {
-			log.Printf("Failure connecting to %s: %s\n", address, err)
+			log.Printf("[publisher] Failure connecting to %s: %s\n", address, err)
 			time.Sleep(1 * time.Second)
 			continue
 		}
@@ -201,13 +201,13 @@ func connect(config *NetworkConfig) (socket *tls.Conn) {
 		socket.SetDeadline(time.Now().Add(config.timeout))
 		err = socket.Handshake()
 		if err != nil {
-			log.Printf("Failed to tls handshake with %s %s\n", address, err)
+			log.Printf("[publisher] Failed to tls handshake with %s %s\n", address, err)
 			time.Sleep(1 * time.Second)
 			socket.Close()
 			continue
 		}
 
-		log.Printf("Connected to %s\n", address)
+		log.Printf("[publisher] Connected to %s\n", address)
 
 		// connected, let's rock and roll.
 		return

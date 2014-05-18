@@ -14,7 +14,8 @@ type Prospecter struct {
 	sig_ch chan interface{}
 	SIG    <-chan interface{}
 }
-func newProspecter () *Prospecter {
+
+func newProspecter() *Prospecter {
 	ctl_ch := make(chan int)
 	sig_ch := make(chan interface{})
 	return &Prospecter{
@@ -98,7 +99,7 @@ func prospector_scan(path string, fields map[string]string, fileinfo map[string]
 	// Evaluate the path as a wildcards/shell glob
 	matches, err := filepath.Glob(path)
 	if err != nil {
-		log.Printf("glob(%s) failed: %v\n", path, err)
+		log.Printf("[prospector] glob(%s) failed: %v\n", path, err)
 		return
 	}
 
@@ -113,12 +114,12 @@ func prospector_scan(path string, fields map[string]string, fileinfo map[string]
 		info, err := os.Stat(file)
 		// TODO(sissel): check err
 		if err != nil {
-			log.Printf("stat(%s) failed: %s\n", file, err)
+			log.Printf("[prospector] stat(%s) failed: %s\n", file, err)
 			continue
 		}
 
 		if info.IsDir() {
-			log.Printf("Skipping directory: %s\n", file)
+			log.Printf("[prospector] Skipping directory: %s\n", file)
 			continue
 		}
 
@@ -135,16 +136,16 @@ func prospector_scan(path string, fields map[string]string, fileinfo map[string]
 			// TODO(sissel): Skip files with modification dates older than N
 			// TODO(sissel): Make the 'ignore if older than N' tunable
 			if time.Since(info.ModTime()) > 24*time.Hour {
-				log.Printf("Skipping old file: %s\n", file)
+				log.Printf("[prospector] Skipping old file: %s\n", file)
 			} else if is_file_renamed(file, info, fileinfo) {
 				// Check to see if this file was simply renamed (known inode+dev)
 			} else {
 				// Most likely a new file. Harvest it!
-				log.Printf("Launching harvester on new file: %s\n", file)
+				log.Printf("[prospector] Launching harvester on new file: %s\n", file)
 				go newHarvester(output, path, fields).Harvest()
 			}
 		} else if !is_fileinfo_same(lastinfo, info) {
-			log.Printf("Launching harvester on rotated file: %s\n", file)
+			log.Printf("[prospector] Launching harvester on rotated file: %s\n", file)
 			// TODO(sissel): log 'file rotated' or osmething
 			// Start a harvester on the path; a new file appeared with the same name.
 			go newHarvester(output, path, fields).Harvest()

@@ -13,7 +13,7 @@ const (
 	no_profiling             = ""
 	path_stdin               = "-"
 	def_idle_timeout_secs    = 5 * time.Second
-	cpu_profile_period_secs  = 60 * time.Second
+	cpu_profile_period_secs  = 6 * time.Second
 	def_harverst_buffer_size = 16 << 10 /* harvester buffer size 16kb buffer by default */
 	harvester_eof_timeout    = 1 * time.Second
 )
@@ -73,6 +73,7 @@ func main() {
 
 	// load and very configuration
 
+	log.Println("load configuration ..")
 	config, e := LoadConfig(config_fname)
 	if e != nil {
 		log.Fatalf("fatal error: %s - will exit.", e)
@@ -89,25 +90,25 @@ func main() {
 
 	// REVU: check semantics of nil event to signal shutdown
 	// TODO (joubin)
-	event_chan := make(chan *FileEvent, 16) // REVU: magic number ? todo: event_batch_size
+	event_chan := make(chan *FileEvent, 16) // REVU: magic number ? todo: event_batch_si
 	publisher_chan := make(chan []*FileEvent, 1)
 	registrar_chan := make(chan []*FileEvent, 1)
 
+	var cprof_done chan interface{} = nil
 	if cpu_profile_fname != no_profiling {
+		cprof_done = make(chan interface{})
 		f, err := os.Create(cpu_profile_fname)
 		if err != nil {
 			log.Fatal(err)
 		}
 		pprof.StartCPUProfile(f)
 		go func() {
-			defer func() {
-				// todo: find out if emitting log would be ok to signal profile end.(joubin)
-			}()
-
+			log.Printf("Begin profiling...")
 			<-time.After(cpu_profile_period_secs)
 			pprof.StopCPUProfile()
 
-			panic("done") // REVU don't understand &| like panics in go routines. todo: fix (joubin)
+			log.Printf("Finished profiling - will exit")
+			cprof_done <- nil
 		}()
 	}
 
@@ -143,5 +144,19 @@ func main() {
 
 	log.Println("logstash-forwarder started.")
 
+	/* shutdown cleanly */
+
+	// were we profiling?
+	if cprof_done != nil {
+		// wait for end of profiler
+		<-cprof_done
+		log.Printf("Finished profiling - will exit")
+
+		shutdown()
+	}
 	return
-} /* main */
+}
+
+func shutdown() {
+
+}

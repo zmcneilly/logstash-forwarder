@@ -59,13 +59,13 @@ func (h *Harvester) HarvestAtOffset(init_offset int64) {
 	if h.offset > 0 {
 		loginfo = fmt.Sprintf("at postion %d", h.offset)
 	}
-	log.Printf("Harvesting file %s %s\n", h.path, loginfo)
+	log.Printf("[harvester] Harvesting file %s %s\n", h.path, loginfo)
 
 	h.open()
 
 	info, err := h.file.Stat()
 	if err != nil { // can only be a os.PathErr
-		log.Printf("unexpected error reading %s - %s", h.path, err)
+		log.Printf("[harvester] unexpected error reading %s - %s", h.path, err)
 		//		h.sig_ch<- err // REVU: should post its error - TODO: wire this stuff up
 		return
 	}
@@ -76,7 +76,7 @@ func (h *Harvester) HarvestAtOffset(init_offset int64) {
 	// get current offset in file
 	offset, _ := h.file.Seek(0, os.SEEK_CUR)
 
-	log.Printf("Current file offset: %d\n", offset)
+	log.Printf("[harvester] Current file offset: %d\n", offset)
 
 	// TODO(sissel): Make the buffer size tunable at start-time
 	reader := bufio.NewReaderSize(h.file, harvester_buffer_size)
@@ -90,17 +90,17 @@ func (h *Harvester) HarvestAtOffset(init_offset int64) {
 			// Check to see if the file was truncated
 			info, _ := h.file.Stat()
 			if info.Size() < offset {
-				log.Printf("File truncated, seeking to beginning: %s\n", h.path)
+				log.Printf("[harvester] File truncated, seeking to beginning: %s\n", h.path)
 				h.file.Seek(0, os.SEEK_SET)
 				offset = 0
 			} else if time.Now().After(deadline) {
 				// assume file is probably dead. Stop harvesting it
-				log.Printf("Stopping harvest of %s; last change was %d seconds ago\n", h.path, time.Now().Sub(last_read_time))
+				log.Printf("[harvester] Stopping harvest of %s; last change was %d seconds ago\n", h.path, time.Now().Sub(last_read_time))
 				return
 			}
 			continue
 		default: // unexpected error
-			log.Printf("Unexpected state reading from %s; error: %s\n", h.path, err)
+			log.Printf("[harvester] Unexpected state reading from %s; error: %s\n", h.path, err)
 			return
 		}
 		last_read_time = time.Now()
@@ -144,7 +144,7 @@ func (h *Harvester) open() *os.File {
 
 		if err != nil {
 			// retry on failure.
-			log.Printf("Failed opening %s: %s\n", h.path, err)
+			log.Printf("[harvester] Failed opening %s: %s\n", h.path, err)
 			time.Sleep(5 * time.Second)
 		} else {
 			break
@@ -179,7 +179,7 @@ func (h *Harvester) readline(reader *bufio.Reader) (*string, error) {
 			// Give up waiting for data after a certain amount of time.
 			// If we time out, return the error (eof)
 			if time.Now().After(deadline) {
-				log.Println("Harvester timeout reading line")
+				log.Println("[harvester] Harvester timeout reading line")
 				return nil, err
 			}
 			continue
