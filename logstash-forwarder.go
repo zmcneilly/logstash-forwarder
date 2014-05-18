@@ -89,7 +89,7 @@ func main() {
 
 	// REVU: check semantics of nil event to signal shutdown
 	// TODO (joubin)
-	event_chan := make(chan *FileEvent, 16) // REVU: magic number ? todo: find out (joubin)
+	event_chan := make(chan *FileEvent, 16) // REVU: magic number ? todo: event_batch_size
 	publisher_chan := make(chan []*FileEvent, 1)
 	registrar_chan := make(chan []*FileEvent, 1)
 

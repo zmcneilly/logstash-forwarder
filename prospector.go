@@ -8,13 +8,35 @@ import (
 	"time"
 )
 
+type Prospecter struct {
+	ctl_ch chan int
+	CTL    chan<- int
+	sig_ch chan interface{}
+	SIG    <-chan interface{}
+}
+func newProspecter () *Prospecter {
+	ctl_ch := make(chan int)
+	sig_ch := make(chan interface{})
+	return &Prospecter{
+		ctl_ch: ctl_ch,
+		CTL:    ctl_ch,
+		sig_ch: sig_ch,
+		SIG:    sig_ch,
+	}
+}
+
+var harvesters = make(map[*Harvester]*Harvester)
+
 func Prospect(fileconfig FileConfig, output chan *FileEvent) {
 	fileinfo := make(map[string]os.FileInfo)
 
 	// Handle any stdin paths
 	for i, path := range fileconfig.Paths {
+		// REVU: what would happen if there are multiple "-" spec'd? TODO review (joubin)
 		if path == path_stdin {
-			go newHarvester(output, path, fileconfig.Fields).Harvest()
+			harvester := newHarvester(output, path, fileconfig.Fields)
+			harvesters[harvester] = harvester // REVU for TODO properly shutdown on exit
+			go harvester.Harvest()
 
 			// Remove it from the file list
 			fileconfig.Paths = append(fileconfig.Paths[:i], fileconfig.Paths[i+1:]...)
@@ -24,6 +46,7 @@ func Prospect(fileconfig FileConfig, output chan *FileEvent) {
 	// Use the registrar db to reopen any files at their last positions
 	resume_tracking(fileconfig, fileinfo, output)
 
+	// REVU (joubin) add ctl and sig channel for proper shutdown
 	for {
 		for _, path := range fileconfig.Paths {
 			prospector_scan(path, fileconfig.Fields, fileinfo, output)
