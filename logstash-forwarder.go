@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+////////////////////////////////////////////////////////////////////////////////
+/// global vars and consts
+////////////////////////////////////////////////////////////////////////////////
+
 const (
 	no_profiling             = ""
 	path_stdin               = "-"
@@ -26,6 +30,7 @@ var config_fname string
 var use_syslog bool
 var seek_from_head bool
 
+// parse command line flags
 func init() {
 
 	flag.StringVar(&config_fname, "config", "", "The config file to load (required)")
@@ -37,6 +42,8 @@ func init() {
 	flag.BoolVar(&seek_from_head, "from-beginning", false, "Read new files from the beginning, instead of the end")
 }
 
+// should be called after flag.Parse() to assert specification of the required cmd-line arguments
+// Calls log.Fatal on error
 func checkRequiredFlags() {
 	if config_fname == "" {
 		flag.Usage()
@@ -44,6 +51,8 @@ func checkRequiredFlags() {
 	}
 }
 
+// check validity of the configuration parameters
+// returns error on invalid configuration elements
 func verifyConfig(config Config) error {
 	if len(config.Files) == 0 {
 		return fmt.Errorf("No paths given. What files do you want me to watch?")
@@ -51,6 +60,7 @@ func verifyConfig(config Config) error {
 	return nil
 }
 
+// emit the important params the server process is using on startup
 func initsplash() {
 	log.Println("logstash-forwarder initialzing ...")
 	log.Printf("\tconfig-file:         <%s>", config_fname)
@@ -62,101 +72,193 @@ func initsplash() {
 	log.Println()
 }
 
+// server main.
 func main() {
 
 	// parse flags and emit the startup splash
 	// enforce required cmd-line args
-
 	flag.Parse()
-
 	checkRequiredFlags()
 
-	// load and very configuration
+	// create instance of lsfProcess
+	this := newLSFProcess()
 
-	log.Println("load configuration ..")
-	config, e := LoadConfig(config_fname)
+	// configure the process
+	// sets the config parameter of lsfProcess
+	this.configure(config_fname)
+
+	// initialize all components
+	this.initialize()
+
+	// create and start active components
+	// REVU: TODO these should be created in init ..
+	this.startup()
+
+	/* TODO: shutdown cleanly */
+	if this.isProfiling() {
+		// wait for end of profiler
+		<-this.profiler_chan
+		log.Printf("[main] Finished profiling - will exit\n\n\n\n\n\n\n\n\n")
+
+	} else {
+		/* TODO: shutdown cleanly */
+		// TODO: either trap ctl-c or introduce a simple http server port for admin
+		// For now, this will forever block
+		<-make(chan bool)
+	}
+
+	this.shutdown()
+
+	return
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// LSF process & main functionality
+////////////////////////////////////////////////////////////////////////////////
+
+// basic struct to hold various stateful components of the logstash-forwarder
+// each instance corresponds to a unique lsf process
+type lsfProcess struct {
+	config         *Config
+	registerar     *Registrar
+	profiler_chan  chan interface{} // if not nil, we're profiling
+	event_chan     chan *FileEvent
+	publisher_chan chan []*FileEvent
+	registrar_chan chan []*FileEvent
+}
+
+// instantiate an lsfProcess and create the necessary channels.
+func newLSFProcess() *lsfProcess {
+	return &lsfProcess{}
+}
+
+// configure the lsfProcess process from the give
+// config file.
+func (l *lsfProcess) configure(filename string) {
+	log.Println("[main] load configuration ..")
+	config, e := LoadConfig(filename)
 	if e != nil {
-		log.Fatalf("fatal error: %s - will exit.", e)
+		log.Fatalf("[main] fatal error: %s - will exit.", e)
 	}
 
 	e = verifyConfig(*config)
 	if e != nil {
-		log.Fatalf("fatal error: %s - will exit.", e)
+		log.Fatalf("[main] fatal error: %s - will exit.", e)
 	}
 
-	/* initialize */
+	// All is OK so now
+	// set and create the necessary components
+	l.config = config
+	l.event_chan = make(chan *FileEvent, 16)
+	l.publisher_chan = make(chan []*FileEvent, 1)
+	l.registrar_chan = make(chan []*FileEvent, 1)
+}
 
+func (l *lsfProcess) isProfiling() bool {
+	return l.profiler_chan != nil
+}
+
+// initialize logstash-forwarder
+func (l *lsfProcess) initialize() {
 	initsplash()
-
-	// REVU: check semantics of nil event to signal shutdown
-	// TODO (joubin)
-	event_chan := make(chan *FileEvent, 16) // REVU: magic number ? todo: event_batch_si
-	publisher_chan := make(chan []*FileEvent, 1)
-	registrar_chan := make(chan []*FileEvent, 1)
-
-	var cprof_done chan interface{} = nil
-	if cpu_profile_fname != no_profiling {
-		cprof_done = make(chan interface{})
-		f, err := os.Create(cpu_profile_fname)
-		if err != nil {
-			log.Fatal(err)
-		}
-		pprof.StartCPUProfile(f)
-		go func() {
-			log.Printf("Begin profiling...")
-			<-time.After(cpu_profile_period_secs)
-			pprof.StopCPUProfile()
-
-			log.Printf("Finished profiling - will exit")
-			cprof_done <- nil
-		}()
-	}
-
-	// The basic model of execution:
-	// - prospector: finds files in paths/globs to harvest, starts harvesters
-	// - harvester: reads a file, sends events to the spooler
-	// - spooler: buffers events until ready to flush to the publisher
-	// - publisher: writes to the network, notifies registrar
-	// - registrar: records positions of files read
-	// Finally, prospector uses the registrar information, on restart, to
-	// determine where in each file to resume a harvester.
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 	if use_syslog {
 		configureSyslog()
 	}
+}
 
-	/* start */
+// start logstash-forwarder active components
+//
+// The basic model of execution:
+// - prospector: finds files in paths/globs to harvest, starts harvesters
+// - harvester: reads a file, sends events to the spooler
+// - spooler: buffers events until ready to flush to the publisher
+// - publisher: writes to the network, notifies registrar
+// - registrar: records positions of files read
+// Finally, prospector uses the registrar information, on restart, to
+// determine where in each file to resume a harvester.
+//
+func (lsf *lsfProcess) startup() {
+	if cpu_profile_fname != no_profiling {
+		lsf.runProfiler()
+	}
 
 	// Prospect the globs/paths given on the command line and launch harvesters
-	for _, fileconfig := range config.Files {
-		go Prospect(fileconfig, event_chan)
+	for _, fileconfig := range lsf.config.Files {
+		// TODO: use worker pattern
+		go Prospect(fileconfig, lsf.event_chan)
 	}
 
 	// Harvesters dump events into the spooler.
 	// REVU: todo: find out how the shutdown behavior is supposed to look.
-	go Spool(event_chan, publisher_chan, max_spool_size, idle_timeout)
+	// TODO: use worker pattern
+	log.Println("[main] start spooler ..")
+	go Spool(lsf.event_chan, lsf.publisher_chan, max_spool_size, idle_timeout)
 
-	go Publishv1(publisher_chan, registrar_chan, &config.Network)
+	// TODO: use worker pattern
+	log.Println("[main] start publisher ..")
+	go Publishv1(lsf.publisher_chan, lsf.registrar_chan, &lsf.config.Network)
 
 	// registrar records last acknowledged positions in all files.
-	Registrar(registrar_chan)
+	// TODO: use worker pattern
+	log.Println("[main] start registerar ..")
+	lsf.registerar = NewRegistrar(lsf.registrar_chan)
+	go lsf.registerar.Run()
 
-	log.Println("logstash-forwarder started.")
-
-	/* shutdown cleanly */
-
-	// were we profiling?
-	if cprof_done != nil {
-		// wait for end of profiler
-		<-cprof_done
-		log.Printf("Finished profiling - will exit")
-
-		shutdown()
-	}
-	return
+	log.Println("[main] logstash-forwarder started.")
 }
 
-func shutdown() {
+// cleanly shutdown the server and active components
+// REVU this is mostly TODO:
+func (l *lsfProcess) shutdown() {
+	log.Printf("[main] logstash-forwarder - shutting down ...")
+	// shutdown sequence
 
+	// shutdown registerar
+	l.registerar.CTL <- 1
+	<-l.registerar.SIG
+}
+
+// starts the profiler go routine
+// profiler is expected to complete in a specified finite time
+func (l *lsfProcess) runProfiler() {
+	l.profiler_chan = make(chan interface{})
+	fn_profile, e := getCpuProfiler(cpu_profile_fname, l.profiler_chan)
+	if e != nil {
+		log.Fatalf("[main] fatal error: %s - will exit.", e)
+	}
+	go fn_profile()
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// misc and support functions
+////////////////////////////////////////////////////////////////////////////////
+
+// return the func for go routine to run the profiler
+// See REVU notes for issues
+func getCpuProfiler(fname string, done chan interface{}) (func(), error) {
+
+	f, e := os.Create(cpu_profile_fname)
+	if e != nil {
+		return nil, e
+	}
+
+	// REVU: this still starts profile before go on the wait so the time will not be precise
+	// TODO: fix it (joubin)
+	e = pprof.StartCPUProfile(f)
+	if e != nil {
+		return nil, e
+	}
+
+	fn := func() {
+		log.Printf("[profiler] Begin profiling...")
+
+		<-time.After(cpu_profile_period_secs)
+		pprof.StopCPUProfile()
+
+		log.Printf("[profiler] Finished profiling - will exit")
+		done <- 0
+	}
+	return fn, nil
 }
