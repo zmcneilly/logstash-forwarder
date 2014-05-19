@@ -53,8 +53,10 @@ func (s *Spooler) Run(inport chan *FileEvent, outport chan []*FileEvent, errport
 	for {
 		select {
 		case <-s.ctl_ch:
+			// REVU: todo: find out how the shutdown behavior is supposed to look.
 			log.Printf("[spooler] shutdown event - will exit")
 			s.sig_ch <- "exit"
+			return
 		case event := <-inport:
 			//append(spool, event)
 			spool[spool_i] = event

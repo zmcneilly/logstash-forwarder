@@ -217,8 +217,6 @@ func (lsf *lsfProcess) startup() {
 	}
 
 	// Harvesters dump events into the spooler.
-	// REVU: todo: find out how the shutdown behavior is supposed to look.
-	// TODO: use worker pattern
 	log.Println("[main] start spooler ..")
 	lsf.spooler = NewSpooler(idle_timeout, max_spool_size)
 	go lsf.spooler.Run(lsf.event_chan, lsf.publisher_chan, lsf.errport)
