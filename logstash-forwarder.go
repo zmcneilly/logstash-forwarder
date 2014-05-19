@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"runtime/pprof"
 	"time"
 )
@@ -94,17 +95,16 @@ func main() {
 	// REVU: TODO these should be created in init ..
 	this.startup()
 
-	/* TODO: shutdown cleanly */
-	if this.isProfiling() {
+	// shutdown on profile end OR os signal kill|interrupt
+	switch {
+	case this.isProfiling():
 		// wait for end of profiler
 		<-this.profiler_chan
 		log.Printf("[main] Finished profiling - will exit\n\n\n\n\n\n\n\n\n")
-
-	} else {
-		/* TODO: shutdown cleanly */
-		// TODO: either trap ctl-c or introduce a simple http server port for admin
-		// For now, this will forever block
-		<-make(chan bool)
+	default:
+		sig := <-this.interrupts // wait until interrupted
+		log.Printf("[main] interrupted: %d", sig)
+		log.Printf("[main] will exit.")
 	}
 
 	this.shutdown()
@@ -127,6 +127,8 @@ type lsfProcess struct {
 	event_chan     chan *FileEvent
 	publisher_chan chan []*FileEvent
 	registrar_chan chan []*FileEvent
+
+	interrupts chan os.Signal
 }
 
 // instantiate an lsfProcess and create the necessary channels.
@@ -158,11 +160,12 @@ func (l *lsfProcess) configure(filename string) {
 	l.registrar_chan = make(chan []*FileEvent, 1)
 }
 
+// returns true if we're running a cpu profile
 func (l *lsfProcess) isProfiling() bool {
 	return l.profiler_chan != nil
 }
 
-// initialize logstash-forwarder
+// initializes the logstash-forwarder instance
 func (l *lsfProcess) initialize() {
 	initsplash()
 
@@ -170,6 +173,11 @@ func (l *lsfProcess) initialize() {
 	if use_syslog {
 		configureSyslog()
 	}
+
+	// set OS signal trap
+	l.interrupts = make(chan os.Signal, 1)
+	signal.Notify(l.interrupts, os.Interrupt, os.Kill)
+
 }
 
 // start logstash-forwarder active components
