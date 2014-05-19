@@ -23,6 +23,7 @@ const (
 	harvester_eof_timeout    = 1 * time.Second
 )
 
+// REVU: minimize globals TODO wrap these up in an immutable object
 var cpu_profile_fname string
 var max_spool_size uint64
 var harvester_buffer_size int
@@ -54,6 +55,7 @@ func checkRequiredFlags() {
 
 // check validity of the configuration parameters
 // returns error on invalid configuration elements
+// REVU: possibly belongns in config.go
 func verifyConfig(config Config) error {
 	if len(config.Files) == 0 {
 		return fmt.Errorf("No paths given. What files do you want me to watch?")
@@ -74,6 +76,7 @@ func initsplash() {
 }
 
 // server main.
+// REVU: this is pretty much done.
 func main() {
 
 	// parse flags and emit the startup splash
@@ -231,7 +234,7 @@ func (l *lsfProcess) shutdown() {
 	// shutdown sequence
 
 	// shutdown prospectors
-	log.Printf("[main] - shutting down prospectors ...")
+	log.Printf("[main] shutting down prospectors ...")
 	for prospector, _ := range l.prospectors {
 		prospector.CTL <- 0
 	}
@@ -241,7 +244,7 @@ func (l *lsfProcess) shutdown() {
 	}
 
 	// shutdown registerar
-	log.Printf("[main] - shutting down registrar ...")
+	log.Printf("[main]  shutting down registrar ...")
 	l.registerar.CTL <- 1
 	<-l.registerar.SIG
 }

@@ -70,10 +70,10 @@ func (p *Prospecter) run() {
 }
 
 func (p *Prospecter) shutdown() {
-	log.Printf("[prospector] - shutting down ...")
+	log.Printf("[prospector] shutting down ...")
 	p.sig_ch <- "exit"
 
-	log.Printf("[prospector] - shutting down harvesters ...")
+	log.Printf("[prospector] shutting down harvesters ...")
 	for _, harvester := range p.harvesters {
 		harvester.CTL <- 0
 	}
