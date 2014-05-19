@@ -49,7 +49,7 @@ func newHarvester(path string, init_offset int64, fields map[string]string) *Har
 }
 
 // run harvester at offset. Also see HarvestAtOffset(int64)
-func (h *Harvester) Run(inport chan<- *FileEvent, outport chan<- *FileEvent, errport chan<- error) {
+func (h *Harvester) Run(inport <-chan *FileEvent, outport chan<- *FileEvent, errport chan<- error) {
 	//func (h *Harvester) Run(output chan<- *FileEvent) {
 	//	h.HarvestAtOffset(output)
 	//}
