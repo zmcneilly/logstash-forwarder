@@ -11,7 +11,7 @@ import (
 type Prospecter struct {
 	fileconfig FileConfig
 	fileinfo   map[string]os.FileInfo
-	harvesters map[*Harvester]*Harvester
+	harvesters map[*Harvester]time.Time
 	output     chan<- *FileEvent
 
 	ctl_ch chan int
@@ -20,33 +20,36 @@ type Prospecter struct {
 	SIG    <-chan interface{}
 }
 
-func newProspecter(fileconfig FileConfig, output chan *FileEvent) *Prospecter {
+//func newProspecter(fileconfig FileConfig, output chan *FileEvent) *Prospecter {
+func newProspecter(fileconfig FileConfig) *Prospecter {
 	ctl_ch := make(chan int)
 	sig_ch := make(chan interface{})
 	return &Prospecter{
 		fileconfig: fileconfig,
-		harvesters: make(map[*Harvester]*Harvester),
+		harvesters: make(map[*Harvester]time.Time),
 		fileinfo:   make(map[string]os.FileInfo),
-		output:     output,
-		ctl_ch:     ctl_ch,
-		CTL:        ctl_ch,
-		sig_ch:     sig_ch,
-		SIG:        sig_ch,
+		//		output:     output,
+		ctl_ch: ctl_ch,
+		CTL:    ctl_ch,
+		sig_ch: sig_ch,
+		SIG:    sig_ch,
 	}
 }
 
 // run the Prospector - events to be sent to the provided channel
-func (p *Prospecter) run() {
+func (p *Prospecter) Run(output chan *FileEvent) {
 
 	log.Printf("[prospector] started - paths: %s\n", p.fileconfig.Paths)
+
+	p.output = output
 
 	// Handle any stdin paths
 	for i, path := range p.fileconfig.Paths {
 		// REVU: what would happen if there are multiple "-" spec'd? TODO review (joubin)
 		if path == path_stdin {
 			log.Printf("[prospector] start harvester for %s ..\n", path)
-			harvester := p.addNewHarvester(path)
-			go harvester.Harvest()
+			harvester := p.addNewHarvester(path, 0) // offset 0
+			go harvester.Run(p.output)
 
 			// Remove path from the file list
 			p.fileconfig.Paths = append(p.fileconfig.Paths[:i], p.fileconfig.Paths[i+1:]...)
@@ -74,11 +77,11 @@ func (p *Prospecter) shutdown() {
 	p.sig_ch <- "exit"
 
 	log.Printf("[prospector] shutting down harvesters ...")
-	for _, harvester := range p.harvesters {
+	for harvester, _ := range p.harvesters {
 		harvester.CTL <- 0
 	}
 	// wait for them REVU: handle non-responsive cases
-	for _, harvester := range p.harvesters {
+	for harvester, _ := range p.harvesters {
 		<-harvester.SIG
 	}
 }
@@ -109,8 +112,8 @@ func (p *Prospecter) resume_tracking() {
 					match, _ := filepath.Match(pathglob, path)
 					if match {
 						// run harvester at last offset
-						harvester := p.addNewHarvester(path)
-						go harvester.HarvestAtOffset(state.Offset)
+						harvester := p.addNewHarvester(path, state.Offset)
+						go harvester.Run(p.output)
 						//						go newHarvester(p.output, path, p.fileconfig.Fields).HarvestAtOffset(state.Offset)
 						break
 					}
@@ -122,9 +125,9 @@ func (p *Prospecter) resume_tracking() {
 
 // creates a new Harvestor for the given path and adds it to
 // map of harvesters.
-func (p *Prospecter) addNewHarvester(path string) *Harvester {
-	h := newHarvester(p.output, path, p.fileconfig.Fields)
-	p.harvesters[h] = h
+func (p *Prospecter) addNewHarvester(path string, offset int64) *Harvester {
+	h := newHarvester(path, offset, p.fileconfig.Fields)
+	p.harvesters[h] = time.Now()
 	return h
 }
 
@@ -177,13 +180,15 @@ func (p *Prospecter) scanPath(path string) {
 			} else {
 				// Most likely a new file. Harvest it!
 				log.Printf("[prospector] Launching harvester on new file: %s\n", file)
-				go newHarvester(p.output, path, p.fileconfig.Fields).Harvest()
+				harvester := p.addNewHarvester(path, 0)
+				go harvester.Run(p.output)
 			}
 		} else if !is_fileinfo_same(lastinfo, info) {
 			log.Printf("[prospector] Launching harvester on rotated file: %s\n", file)
 			// TODO(sissel): log 'file rotated' or osmething
 			// Start a harvester on the path; a new file appeared with the same name.
-			go newHarvester(p.output, path, p.fileconfig.Fields).Harvest()
+			harvester := p.addNewHarvester(path, 0)
+			go harvester.Run(p.output)
 		}
 	} // for each file matched by the glob
 }

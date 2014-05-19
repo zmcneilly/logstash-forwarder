@@ -203,9 +203,9 @@ func (lsf *lsfProcess) startup() {
 	for _, fileconfig := range lsf.config.Files {
 		// TODO: use worker pattern
 		log.Printf("[main] start prospector for %s ..\n", fileconfig.Paths)
-		prospector := newProspecter(fileconfig, lsf.event_chan)
+		prospector := newProspecter(fileconfig)
 		lsf.prospectors[prospector] = time.Now()
-		go prospector.run()
+		go prospector.Run(lsf.event_chan)
 	}
 
 	// Harvesters dump events into the spooler.

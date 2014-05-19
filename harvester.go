@@ -32,13 +32,15 @@ const (
 // output: channel to emit harvest FileEvent
 // path: harvest file
 // fields: file fields
-func newHarvester(output chan<- *FileEvent, path string, fields map[string]string) *Harvester {
+func newHarvester(path string, init_offset int64, fields map[string]string) *Harvester {
 	ctl_ch := make(chan int)
 	sig_ch := make(chan interface{})
 	return &Harvester{
 		path:   path,
 		fields: fields,
-		output: output,
+		offset: init_offset,
+
+		//		output: output,
 		ctl_ch: ctl_ch,
 		CTL:    ctl_ch,
 		sig_ch: sig_ch,
@@ -47,14 +49,17 @@ func newHarvester(output chan<- *FileEvent, path string, fields map[string]strin
 }
 
 // run harvester at offset. Also see HarvestAtOffset(int64)
-func (h *Harvester) Harvest() {
-	h.HarvestAtOffset(0)
-}
-
-// run harvester.
-// Reads lines from associated file until EOF timeout
-func (h *Harvester) HarvestAtOffset(init_offset int64) {
-	h.offset = init_offset
+func (h *Harvester) Run(output chan<- *FileEvent) {
+	//	h.HarvestAtOffset(output)
+	//}
+	//
+	//// run harvester.
+	//// Reads lines from associated file until EOF timeout
+	//func (h *Harvester) HarvestAtOffset(output chan<- *FileEvent) {
+	//
+	//	h.offset = init_offset
+	//	h.path = path
+	h.output = output
 	loginfo := ""
 	if h.offset > 0 {
 		loginfo = fmt.Sprintf("at postion %d", h.offset)
