@@ -1,31 +1,61 @@
 package main
 
 import (
+	"log"
 	"time"
 )
 
-// revu: (joubin)
 // todo: document this
 // todo: add shutdown event/hook
 // todo: see if can be consolidated with Publisher event life-cycle
 // todo: findout why we are using array of events on output - (double buffering? why?)
-func Spool(input chan *FileEvent, output chan []*FileEvent, max_size uint64, idle_timeout time.Duration) {
+
+type Spooler struct {
+	idle_timeout time.Duration
+	max_size     uint64
+
+	ctl_ch chan int
+	CTL    chan<- int
+	sig_ch chan interface{}
+	SIG    <-chan interface{}
+}
+
+func NewSpooler(timeout time.Duration, size uint64) *Spooler {
+	ctl_ch := make(chan int)
+	sig_ch := make(chan interface{})
+	return &Spooler{
+		idle_timeout: timeout,
+		max_size:     size,
+
+		//		output: output,
+		ctl_ch: ctl_ch,
+		CTL:    ctl_ch,
+		sig_ch: sig_ch,
+		SIG:    sig_ch,
+	}
+}
+
+// REVU: todo make this interruptible
+func (s *Spooler) Run(inport chan *FileEvent, outport chan []*FileEvent, errport chan<- error) {
 
 	// heartbeat periodically. If the last flush was longer than
 	// 'idle_timeout' time ago, then we'll force a flush to prevent us from
 	// holding on to spooled events for too long.
 
-	timeout := idle_timeout
+	timeout := s.idle_timeout
 
 	// slice for spooling into
 	// TODO(sissel): use container.Ring?
-	spool := make([]*FileEvent, max_size)
+	spool := make([]*FileEvent, s.max_size)
 
 	// Current write position in the spool
 	var spool_i int = 0
 	for {
 		select {
-		case event := <-input:
+		case <-s.ctl_ch:
+			log.Printf("[spooler] shutdown event - will exit")
+			s.sig_ch <- "exit"
+		case event := <-inport:
 			//append(spool, event)
 			spool[spool_i] = event
 			spool_i++
@@ -35,7 +65,7 @@ func Spool(input chan *FileEvent, output chan []*FileEvent, max_size uint64, idl
 				//spoolcopy := make([]*FileEvent, max_size)
 				var spoolcopy []*FileEvent
 				spoolcopy = append(spoolcopy, spool[:]...)
-				output <- spoolcopy
+				outport <- spoolcopy
 				spool_i = 0
 			}
 		case <-time.After(timeout):
@@ -43,7 +73,7 @@ func Spool(input chan *FileEvent, output chan []*FileEvent, max_size uint64, idl
 			if spool_i > 0 {
 				var spoolcopy []*FileEvent
 				spoolcopy = append(spoolcopy, spool[0:spool_i]...)
-				output <- spoolcopy
+				outport <- spoolcopy
 				spool_i = 0
 			}
 		}

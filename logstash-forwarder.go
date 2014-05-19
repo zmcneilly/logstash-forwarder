@@ -126,6 +126,7 @@ func main() {
 type lsfProcess struct {
 	config      *Config
 	registerar  *Registrar
+	spooler     *Spooler
 	prospectors map[*Prospecter]time.Time
 
 	profiler_chan  chan interface{} // if not nil, we're profiling
@@ -219,7 +220,8 @@ func (lsf *lsfProcess) startup() {
 	// REVU: todo: find out how the shutdown behavior is supposed to look.
 	// TODO: use worker pattern
 	log.Println("[main] start spooler ..")
-	go Spool(lsf.event_chan, lsf.publisher_chan, max_spool_size, idle_timeout)
+	lsf.spooler = NewSpooler(idle_timeout, max_spool_size)
+	go lsf.spooler.Run(lsf.event_chan, lsf.publisher_chan, lsf.errport)
 
 	// TODO: use worker pattern
 	log.Println("[main] start publisher ..")
@@ -249,6 +251,11 @@ func (l *lsfProcess) shutdown() {
 	for prospector, _ := range l.prospectors {
 		<-prospector.SIG
 	}
+
+	// shutdown spooler
+	log.Printf("[main]  shutting down spooler ...")
+	l.spooler.CTL <- 1
+	<-l.spooler.SIG
 
 	// shutdown registerar
 	log.Printf("[main]  shutting down registrar ...")
