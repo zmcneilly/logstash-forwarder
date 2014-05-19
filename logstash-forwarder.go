@@ -119,9 +119,9 @@ func main() {
 // basic struct to hold various stateful components of the logstash-forwarder
 // each instance corresponds to a unique lsf process
 type lsfProcess struct {
-	config     *Config
-	registerar *Registrar
-	prospector *Prospecter
+	config      *Config
+	registerar  *Registrar
+	prospectors map[*Prospecter]time.Time
 
 	profiler_chan  chan interface{} // if not nil, we're profiling
 	event_chan     chan *FileEvent
@@ -131,7 +131,9 @@ type lsfProcess struct {
 
 // instantiate an lsfProcess and create the necessary channels.
 func newLSFProcess() *lsfProcess {
-	return &lsfProcess{}
+	return &lsfProcess{
+		prospectors: make(map[*Prospecter]time.Time),
+	}
 }
 
 // configure the lsfProcess process from the give
@@ -190,8 +192,9 @@ func (lsf *lsfProcess) startup() {
 	for _, fileconfig := range lsf.config.Files {
 		// TODO: use worker pattern
 		log.Printf("[main] start prospector for %s ..\n", fileconfig.Paths)
-		lsf.prospector = newProspecter(fileconfig, lsf.event_chan)
-		go lsf.prospector.run()
+		prospector := newProspecter(fileconfig, lsf.event_chan)
+		lsf.prospectors[prospector] = time.Now()
+		go prospector.run()
 	}
 
 	// Harvesters dump events into the spooler.
@@ -219,11 +222,18 @@ func (l *lsfProcess) shutdown() {
 	log.Printf("[main] logstash-forwarder - shutting down ...")
 	// shutdown sequence
 
-	// shutdown prospector
-	l.prospector.CTL <- 1
-	<-l.prospector.SIG
+	// shutdown prospectors
+	log.Printf("[main] - shutting down prospectors ...")
+	for prospector, _ := range l.prospectors {
+		prospector.CTL <- 0
+	}
+	// wait for them REVU: handle non-responsive cases
+	for prospector, _ := range l.prospectors {
+		<-prospector.SIG
+	}
 
 	// shutdown registerar
+	log.Printf("[main] - shutting down registrar ...")
 	l.registerar.CTL <- 1
 	<-l.registerar.SIG
 }

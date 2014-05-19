@@ -58,9 +58,9 @@ func (p *Prospecter) run() {
 	for {
 		select {
 		case <-p.ctl_ch:
-			// TODO: cleanly shutdown all harvesters (joubin)
-			log.Printf("[prospector] shutdown event - will exit")
+			p.shutdown()
 			p.sig_ch <- "exit"
+			return
 		case <-time.After(time.Second * 10):
 			for _, path := range p.fileconfig.Paths {
 				p.scanPath(path)
@@ -69,12 +69,18 @@ func (p *Prospecter) run() {
 	}
 }
 
-// creates a new Harvestor for the given path and adds it to
-// map of harvesters.
-func (p *Prospecter) addNewHarvester(path string) *Harvester {
-	h := newHarvester(p.output, path, p.fileconfig.Fields)
-	p.harvesters[h] = h // REVU for TODO properly shutdown on exit
-	return h
+func (p *Prospecter) shutdown() {
+	log.Printf("[prospector] - shutting down ...")
+	p.sig_ch <- "exit"
+
+	log.Printf("[prospector] - shutting down harvesters ...")
+	for _, harvester := range p.harvesters {
+		harvester.CTL <- 0
+	}
+	// wait for them REVU: handle non-responsive cases
+	for _, harvester := range p.harvesters {
+		<-harvester.SIG
+	}
 }
 
 func (p *Prospecter) resume_tracking() {
@@ -82,7 +88,7 @@ func (p *Prospecter) resume_tracking() {
 	history, err := os.Open(".logstash-forwarder")
 	if err == nil {
 		historical_state := make(map[string]*FileState)
-		log.Printf("[prospector] Loading registrar data\n")
+		log.Println("[prospector] Loading registrar data")
 		decoder := json.NewDecoder(history)
 		decoder.Decode(&historical_state)
 		history.Close()
@@ -103,13 +109,23 @@ func (p *Prospecter) resume_tracking() {
 					match, _ := filepath.Match(pathglob, path)
 					if match {
 						// run harvester at last offset
-						go newHarvester(p.output, path, p.fileconfig.Fields).HarvestAtOffset(state.Offset)
+						harvester := p.addNewHarvester(path)
+						go harvester.HarvestAtOffset(state.Offset)
+						//						go newHarvester(p.output, path, p.fileconfig.Fields).HarvestAtOffset(state.Offset)
 						break
 					}
 				}
 			}
 		}
 	}
+}
+
+// creates a new Harvestor for the given path and adds it to
+// map of harvesters.
+func (p *Prospecter) addNewHarvester(path string) *Harvester {
+	h := newHarvester(p.output, path, p.fileconfig.Fields)
+	p.harvesters[h] = h
+	return h
 }
 
 func (p *Prospecter) scanPath(path string) {
