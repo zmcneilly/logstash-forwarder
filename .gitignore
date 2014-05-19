@@ -1,3 +1,4 @@
+.DS_Store
 *.o
 build
 bin
@@ -22,3 +23,5 @@ nacl.secret
 .rbx
 lumberjack
 logstash-forwarder
+.logstash-forwarder
+.idea
