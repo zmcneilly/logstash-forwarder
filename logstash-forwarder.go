@@ -119,8 +119,10 @@ func main() {
 // basic struct to hold various stateful components of the logstash-forwarder
 // each instance corresponds to a unique lsf process
 type lsfProcess struct {
-	config         *Config
-	registerar     *Registrar
+	config     *Config
+	registerar *Registrar
+	prospector *Prospecter
+
 	profiler_chan  chan interface{} // if not nil, we're profiling
 	event_chan     chan *FileEvent
 	publisher_chan chan []*FileEvent
@@ -187,7 +189,9 @@ func (lsf *lsfProcess) startup() {
 	// Prospect the globs/paths given on the command line and launch harvesters
 	for _, fileconfig := range lsf.config.Files {
 		// TODO: use worker pattern
-		go Prospect(fileconfig, lsf.event_chan)
+		log.Printf("[main] start prospector for %s ..\n", fileconfig.Paths)
+		lsf.prospector = newProspecter(fileconfig, lsf.event_chan)
+		go lsf.prospector.run()
 	}
 
 	// Harvesters dump events into the spooler.
@@ -214,6 +218,10 @@ func (lsf *lsfProcess) startup() {
 func (l *lsfProcess) shutdown() {
 	log.Printf("[main] logstash-forwarder - shutting down ...")
 	// shutdown sequence
+
+	// shutdown prospector
+	l.prospector.CTL <- 1
+	<-l.prospector.SIG
 
 	// shutdown registerar
 	l.registerar.CTL <- 1

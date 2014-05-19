@@ -9,61 +9,80 @@ import (
 )
 
 type Prospecter struct {
+	fileconfig FileConfig
+	fileinfo   map[string]os.FileInfo
+	harvesters map[*Harvester]*Harvester
+	output     chan<- *FileEvent
+
 	ctl_ch chan int
 	CTL    chan<- int
 	sig_ch chan interface{}
 	SIG    <-chan interface{}
 }
 
-func newProspecter() *Prospecter {
+func newProspecter(fileconfig FileConfig, output chan *FileEvent) *Prospecter {
 	ctl_ch := make(chan int)
 	sig_ch := make(chan interface{})
 	return &Prospecter{
-		ctl_ch: ctl_ch,
-		CTL:    ctl_ch,
-		sig_ch: sig_ch,
-		SIG:    sig_ch,
+		fileconfig: fileconfig,
+		harvesters: make(map[*Harvester]*Harvester),
+		fileinfo:   make(map[string]os.FileInfo),
+		output:     output,
+		ctl_ch:     ctl_ch,
+		CTL:        ctl_ch,
+		sig_ch:     sig_ch,
+		SIG:        sig_ch,
 	}
 }
 
-var harvesters = make(map[*Harvester]*Harvester)
+// run the Prospector - events to be sent to the provided channel
+func (p *Prospecter) run() {
 
-func Prospect(fileconfig FileConfig, output chan *FileEvent) {
-	fileinfo := make(map[string]os.FileInfo)
+	log.Printf("[prospector] started - paths: %s\n", p.fileconfig.Paths)
 
 	// Handle any stdin paths
-	for i, path := range fileconfig.Paths {
+	for i, path := range p.fileconfig.Paths {
 		// REVU: what would happen if there are multiple "-" spec'd? TODO review (joubin)
 		if path == path_stdin {
-			harvester := newHarvester(output, path, fileconfig.Fields)
-			harvesters[harvester] = harvester // REVU for TODO properly shutdown on exit
+			log.Printf("[prospector] start harvester for %s ..\n", path)
+			harvester := p.addNewHarvester(path)
 			go harvester.Harvest()
 
-			// Remove it from the file list
-			fileconfig.Paths = append(fileconfig.Paths[:i], fileconfig.Paths[i+1:]...)
+			// Remove path from the file list
+			p.fileconfig.Paths = append(p.fileconfig.Paths[:i], p.fileconfig.Paths[i+1:]...)
 		}
 	}
-
 	// Use the registrar db to reopen any files at their last positions
-	resume_tracking(fileconfig, fileinfo, output)
+	p.resume_tracking()
 
-	// REVU (joubin) add ctl and sig channel for proper shutdown
 	for {
-		for _, path := range fileconfig.Paths {
-			prospector_scan(path, fileconfig.Fields, fileinfo, output)
+		select {
+		case <-p.ctl_ch:
+			// TODO: cleanly shutdown all harvesters (joubin)
+			log.Printf("[prospector] shutdown event - will exit")
+			p.sig_ch <- "exit"
+		case <-time.After(time.Second * 10):
+			for _, path := range p.fileconfig.Paths {
+				p.scanPath(path)
+			}
 		}
-
-		// Defer next scan for a bit.
-		time.Sleep(10 * time.Second) // Make this tunable
 	}
-} /* Prospect */
+}
 
-func resume_tracking(fileconfig FileConfig, fileinfo map[string]os.FileInfo, output chan *FileEvent) {
+// creates a new Harvestor for the given path and adds it to
+// map of harvesters.
+func (p *Prospecter) addNewHarvester(path string) *Harvester {
+	h := newHarvester(p.output, path, p.fileconfig.Fields)
+	p.harvesters[h] = h // REVU for TODO properly shutdown on exit
+	return h
+}
+
+func (p *Prospecter) resume_tracking() {
 	// Start up with any registrar data.
 	history, err := os.Open(".logstash-forwarder")
 	if err == nil {
 		historical_state := make(map[string]*FileState)
-		log.Printf("Loading registrar data\n")
+		log.Printf("[prospector] Loading registrar data\n")
 		decoder := json.NewDecoder(history)
 		decoder.Decode(&historical_state)
 		history.Close()
@@ -78,13 +97,13 @@ func resume_tracking(fileconfig FileConfig, fileinfo map[string]os.FileInfo, out
 
 			if is_file_same(path, info, state) {
 				// same file, seek to last known position
-				fileinfo[path] = info
+				p.fileinfo[path] = info
 
-				for _, pathglob := range fileconfig.Paths {
+				for _, pathglob := range p.fileconfig.Paths {
 					match, _ := filepath.Match(pathglob, path)
 					if match {
 						// run harvester at last offset
-						go newHarvester(output, path, fileconfig.Fields).HarvestAtOffset(state.Offset)
+						go newHarvester(p.output, path, p.fileconfig.Fields).HarvestAtOffset(state.Offset)
 						break
 					}
 				}
@@ -93,7 +112,7 @@ func resume_tracking(fileconfig FileConfig, fileinfo map[string]os.FileInfo, out
 	}
 }
 
-func prospector_scan(path string, fields map[string]string, fileinfo map[string]os.FileInfo, output chan *FileEvent) {
+func (p *Prospecter) scanPath(path string) {
 	//log.Printf("Prospecting %s\n", path)
 
 	// Evaluate the path as a wildcards/shell glob
@@ -124,10 +143,10 @@ func prospector_scan(path string, fields map[string]string, fileinfo map[string]
 		}
 
 		// Check the current info against fileinfo[file]
-		lastinfo, is_known := fileinfo[file]
+		lastinfo, is_known := p.fileinfo[file]
 		// Track the stat data for this file for later comparison to check for
 		// rotation/etc
-		fileinfo[file] = info
+		p.fileinfo[file] = info
 
 		// Conditions for starting a new harvester:
 		// - file path hasn't been seen before
@@ -137,18 +156,18 @@ func prospector_scan(path string, fields map[string]string, fileinfo map[string]
 			// TODO(sissel): Make the 'ignore if older than N' tunable
 			if time.Since(info.ModTime()) > 24*time.Hour {
 				log.Printf("[prospector] Skipping old file: %s\n", file)
-			} else if is_file_renamed(file, info, fileinfo) {
+			} else if is_file_renamed(file, info, p.fileinfo) {
 				// Check to see if this file was simply renamed (known inode+dev)
 			} else {
 				// Most likely a new file. Harvest it!
 				log.Printf("[prospector] Launching harvester on new file: %s\n", file)
-				go newHarvester(output, path, fields).Harvest()
+				go newHarvester(p.output, path, p.fileconfig.Fields).Harvest()
 			}
 		} else if !is_fileinfo_same(lastinfo, info) {
 			log.Printf("[prospector] Launching harvester on rotated file: %s\n", file)
 			// TODO(sissel): log 'file rotated' or osmething
 			// Start a harvester on the path; a new file appeared with the same name.
-			go newHarvester(output, path, fields).Harvest()
+			go newHarvester(p.output, path, p.fileconfig.Fields).Harvest()
 		}
 	} // for each file matched by the glob
 }

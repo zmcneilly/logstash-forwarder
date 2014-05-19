@@ -125,6 +125,8 @@ func (h *Harvester) HarvestAtOffset(init_offset int64) {
 		case <-h.ctl_ch:
 			// TODO: read the ctl code and differentiate between STAT and SHUTDOWN
 			// REVU: for now input on ctl channel interpreted as stop
+			log.Printf("[harvester] shutdown event - will exit")
+			h.sig_ch <- "exit"
 			break
 		default:
 		}
