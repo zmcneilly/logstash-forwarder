@@ -112,7 +112,6 @@ func (p *Prospecter) resume_tracking(inport <-chan *FileEvent, outport chan<- *F
 						// run harvester at last offset
 						harvester := p.addNewHarvester(path, state.Offset)
 						go harvester.Run(nil, outport, errport)
-						//						go newHarvester(p.output, path, p.fileconfig.Fields).HarvestAtOffset(state.Offset)
 						break
 					}
 				}

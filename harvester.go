@@ -50,23 +50,14 @@ func newHarvester(path string, init_offset int64, fields map[string]string) *Har
 
 // run harvester at offset. Also see HarvestAtOffset(int64)
 func (h *Harvester) Run(inport <-chan *FileEvent, outport chan<- *FileEvent, errport chan<- error) {
-	//func (h *Harvester) Run(output chan<- *FileEvent) {
-	//	h.HarvestAtOffset(output)
-	//}
-	//
-	//// run harvester.
-	//// Reads lines from associated file until EOF timeout
-	//func (h *Harvester) HarvestAtOffset(output chan<- *FileEvent) {
-	//
-	//	h.offset = init_offset
-	//	h.path = path
-	//	h.output = output
-	loginfo := ""
+
+	loginfo := "" // extra info for offset harvesters is non-nil
 	if h.offset > 0 {
 		loginfo = fmt.Sprintf("at postion %d", h.offset)
 	}
 	log.Printf("[harvester] Harvesting file %s %s\n", h.path, loginfo)
 
+	// REVU: who closes this?
 	h.open()
 
 	info, err := h.file.Stat()

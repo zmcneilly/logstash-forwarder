@@ -132,12 +132,14 @@ type lsfProcess struct {
 	registrar_chan chan []*FileEvent
 
 	interrupts chan os.Signal
+	errport    chan error
 }
 
 // instantiate an lsfProcess and create the necessary channels.
 func newLSFProcess() *lsfProcess {
 	return &lsfProcess{
 		prospectors: make(map[*Prospecter]time.Time),
+		errport:     make(chan error, 24), // some buffering is useful here - keep it low impedence
 	}
 }
 
@@ -199,13 +201,17 @@ func (lsf *lsfProcess) startup() {
 		lsf.runProfiler()
 	}
 
+	lsf.logErrport()
+
+	lsf.errport <- fmt.Errorf("testing %q", lsf)
+
 	// Prospect the globs/paths given on the command line and launch harvesters
 	for _, fileconfig := range lsf.config.Files {
 		// TODO: use worker pattern
 		log.Printf("[main] start prospector for %s ..\n", fileconfig.Paths)
 		prospector := newProspecter(fileconfig)
 		lsf.prospectors[prospector] = time.Now()
-		go prospector.Run(nil, lsf.event_chan, nil)
+		go prospector.Run(nil, lsf.event_chan, lsf.errport)
 	}
 
 	// Harvesters dump events into the spooler.
@@ -247,6 +253,10 @@ func (l *lsfProcess) shutdown() {
 	log.Printf("[main]  shutting down registrar ...")
 	l.registerar.CTL <- 1
 	<-l.registerar.SIG
+
+	// finally shutdown errport logger
+	log.Printf("[main]  shutting down errport logger ...")
+	close(l.errport)
 }
 
 // starts the profiler go routine
@@ -258,6 +268,23 @@ func (l *lsfProcess) runProfiler() {
 		log.Fatalf("[main] fatal error: %s - will exit.", e)
 	}
 	go fn_profile()
+}
+
+func (lsf *lsfProcess) logErrport() {
+	go func() {
+		log.Println("[main] errport logger started")
+		for {
+			select {
+			case e, ok := <-lsf.errport:
+				if ok {
+					log.Printf("ERROR - %s\n", e)
+				} else {
+					log.Println("[main] errport logger stopped")
+					return // closed errport means shutdown
+				}
+			}
+		}
+	}()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
