@@ -32,6 +32,8 @@ var config_fname string
 var use_syslog bool
 var seek_from_head bool
 
+var EFATAL error = fmt.Errorf("fatal error - system will shutdown")
+
 // parse command line flags
 func init() {
 
@@ -201,9 +203,8 @@ func (lsf *lsfProcess) startup() {
 		lsf.runProfiler()
 	}
 
+	// start the errport logger
 	lsf.logErrport()
-
-	lsf.errport <- fmt.Errorf("testing %q", lsf)
 
 	// Prospect the globs/paths given on the command line and launch harvesters
 	for _, fileconfig := range lsf.config.Files {
@@ -278,6 +279,9 @@ func (lsf *lsfProcess) logErrport() {
 			case e, ok := <-lsf.errport:
 				if ok {
 					log.Printf("ERROR - %s\n", e)
+					if e == EFATAL {
+						lsf.interrupts <- os.Kill
+					}
 				} else {
 					log.Println("[main] errport logger stopped")
 					return // closed errport means shutdown
