@@ -12,7 +12,6 @@ type Prospecter struct {
 	fileconfig FileConfig
 	fileinfo   map[string]os.FileInfo
 	harvesters map[*Harvester]time.Time
-	output     chan<- *FileEvent
 
 	ctl_ch chan int
 	CTL    chan<- int
@@ -28,7 +27,7 @@ func newProspecter(fileconfig FileConfig) *Prospecter {
 		fileconfig: fileconfig,
 		harvesters: make(map[*Harvester]time.Time),
 		fileinfo:   make(map[string]os.FileInfo),
-		//		output:     output,
+
 		ctl_ch: ctl_ch,
 		CTL:    ctl_ch,
 		sig_ch: sig_ch,
@@ -37,11 +36,10 @@ func newProspecter(fileconfig FileConfig) *Prospecter {
 }
 
 // run the Prospector - events to be sent to the provided channel
-func (p *Prospecter) Run(output chan *FileEvent) {
+func (p *Prospecter) Run(inport <-chan *FileEvent, outport chan<- *FileEvent, errport chan<- error) {
+	//func (p *Prospecter) Run(output chan *FileEvent) {
 
 	log.Printf("[prospector] started - paths: %s\n", p.fileconfig.Paths)
-
-	p.output = output
 
 	// Handle any stdin paths
 	for i, path := range p.fileconfig.Paths {
@@ -49,14 +47,14 @@ func (p *Prospecter) Run(output chan *FileEvent) {
 		if path == path_stdin {
 			log.Printf("[prospector] start harvester for %s ..\n", path)
 			harvester := p.addNewHarvester(path, 0) // offset 0
-			go harvester.Run(p.output)
+			go harvester.Run(nil, outport, errport)
 
 			// Remove path from the file list
 			p.fileconfig.Paths = append(p.fileconfig.Paths[:i], p.fileconfig.Paths[i+1:]...)
 		}
 	}
 	// Use the registrar db to reopen any files at their last positions
-	p.resume_tracking()
+	p.resume_tracking(inport, outport, errport)
 
 	for {
 		select {
@@ -66,7 +64,7 @@ func (p *Prospecter) Run(output chan *FileEvent) {
 			return
 		case <-time.After(time.Second * 10):
 			for _, path := range p.fileconfig.Paths {
-				p.scanPath(path)
+				p.scanPath(path, inport, outport, errport)
 			}
 		}
 	}
@@ -86,7 +84,7 @@ func (p *Prospecter) shutdown() {
 	}
 }
 
-func (p *Prospecter) resume_tracking() {
+func (p *Prospecter) resume_tracking(inport <-chan *FileEvent, outport chan<- *FileEvent, errport chan<- error) {
 	// Start up with any registrar data.
 	history, err := os.Open(".logstash-forwarder")
 	if err == nil {
@@ -113,7 +111,7 @@ func (p *Prospecter) resume_tracking() {
 					if match {
 						// run harvester at last offset
 						harvester := p.addNewHarvester(path, state.Offset)
-						go harvester.Run(p.output)
+						go harvester.Run(nil, outport, errport)
 						//						go newHarvester(p.output, path, p.fileconfig.Fields).HarvestAtOffset(state.Offset)
 						break
 					}
@@ -131,7 +129,7 @@ func (p *Prospecter) addNewHarvester(path string, offset int64) *Harvester {
 	return h
 }
 
-func (p *Prospecter) scanPath(path string) {
+func (p *Prospecter) scanPath(path string, inport <-chan *FileEvent, outport chan<- *FileEvent, errport chan<- error) {
 	//log.Printf("Prospecting %s\n", path)
 
 	// Evaluate the path as a wildcards/shell glob
@@ -181,14 +179,14 @@ func (p *Prospecter) scanPath(path string) {
 				// Most likely a new file. Harvest it!
 				log.Printf("[prospector] Launching harvester on new file: %s\n", file)
 				harvester := p.addNewHarvester(path, 0)
-				go harvester.Run(p.output)
+				go harvester.Run(nil, outport, errport)
 			}
 		} else if !is_fileinfo_same(lastinfo, info) {
 			log.Printf("[prospector] Launching harvester on rotated file: %s\n", file)
 			// TODO(sissel): log 'file rotated' or osmething
 			// Start a harvester on the path; a new file appeared with the same name.
 			harvester := p.addNewHarvester(path, 0)
-			go harvester.Run(p.output)
+			go harvester.Run(nil, outport, errport)
 		}
 	} // for each file matched by the glob
 }

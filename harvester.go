@@ -16,7 +16,7 @@ type Harvester struct {
 	offset int64
 	file   *os.File
 
-	output chan<- *FileEvent
+	//	output chan<- *FileEvent
 	ctl_ch chan int
 	CTL    chan<- int
 	sig_ch chan interface{}
@@ -49,7 +49,8 @@ func newHarvester(path string, init_offset int64, fields map[string]string) *Har
 }
 
 // run harvester at offset. Also see HarvestAtOffset(int64)
-func (h *Harvester) Run(output chan<- *FileEvent) {
+func (h *Harvester) Run(inport chan<- *FileEvent, outport chan<- *FileEvent, errport chan<- error) {
+	//func (h *Harvester) Run(output chan<- *FileEvent) {
 	//	h.HarvestAtOffset(output)
 	//}
 	//
@@ -59,7 +60,7 @@ func (h *Harvester) Run(output chan<- *FileEvent) {
 	//
 	//	h.offset = init_offset
 	//	h.path = path
-	h.output = output
+	//	h.output = output
 	loginfo := ""
 	if h.offset > 0 {
 		loginfo = fmt.Sprintf("at postion %d", h.offset)
@@ -122,7 +123,7 @@ func (h *Harvester) Run(output chan<- *FileEvent) {
 		}
 		offset += int64(len(*event.Text)) + 1 // +1 because of the line terminator - todo revu for all os
 
-		h.output <- event // ship the new event downstream
+		outport <- event // ship the new event downstream
 
 		// REVU: all active components should do this. todo
 		// poll ctl channel for directive
