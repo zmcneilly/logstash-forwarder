@@ -28,6 +28,8 @@ type prospecter struct {
 	fileinfo   map[string]os.FileInfo
 	harvesters map[Harvester]time.Time // REVU: change: map[details]Harvester
 	period     time.Duration
+
+	h_stdin Harvester
 }
 
 type Prospecter interface {
@@ -43,6 +45,7 @@ func NewProspecter(fileconfig FileConfig, scanPeriod time.Duration) Prospecter {
 		harvesters: make(map[Harvester]time.Time),
 		fileinfo:   make(map[string]os.FileInfo),
 		period:     scanPeriod,
+		h_stdin:    nil,
 	}
 	worker.WorkerBase = NewWorkerBase(worker, "prospector", prospect)
 	return worker
@@ -56,7 +59,6 @@ func (p *prospecter) Initialize() *WorkerErr {
 
 	// Handle any stdin paths
 	// launch harvester id specified
-	// TODO: there should only be 1 of these stdlib harvesters ..
 	for i, path := range p.fileconfig.Paths {
 		if path == path_stdin {
 			if e := p.addStdinHarvester(i); e != nil {
@@ -145,14 +147,17 @@ func (p *prospecter) addNewHarvester(path string, offset int64, harvestMode Harv
 }
 
 func (p *prospecter) addStdinHarvester(n int) error {
+	// add only once
+	if p.h_stdin != nil {
+		return nil
+	}
 	p.log("initialize harvester for <stdin> ..\n")
-
 	h := NewHarvester(path_stdin, 0, p.fileconfig.Fields, NA_SEEK_STREAM, NA_HARVEST_MODE)
 	if e := h.Initialize(); e != nil {
 		return e
 	}
 	p.harvesters[h] = time.Now()
-
+	p.h_stdin = h
 	return nil
 }
 
