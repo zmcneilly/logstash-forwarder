@@ -1,4 +1,4 @@
-package main
+package lsf
 
 type FileState struct {
 	Source *string `json:"source,omitempty"`
