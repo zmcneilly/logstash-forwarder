@@ -75,9 +75,9 @@ func publish(self interface{}, in0, out0 interface{}, err chan<- *WorkerErr) {
 	in := in0.(<-chan []*FileEvent)
 	out := out0.(chan<- []*FileEvent)
 
-// TEMP - uncomment
-//	p.connect()
-//	defer p.socket.Close()
+	// TEMP - uncomment
+	//	p.connect()
+	//	defer p.socket.Close()
 
 	for {
 		select {
@@ -96,12 +96,12 @@ func publish(self interface{}, in0, out0 interface{}, err chan<- *WorkerErr) {
 
 				// publish events to server
 
-// TEMP - uncomment
-//				e := p.publishEvents(events)
-//				if e != nil {
-//					/* todo error */
-//					return
-//				}
+				// TEMP - uncomment
+				//				e := p.publishEvents(events)
+				//				if e != nil {
+				//					/* todo error */
+				//					return
+				//				}
 
 				// forward events to registrar
 

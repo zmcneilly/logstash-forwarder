@@ -17,12 +17,10 @@ func init() {
 // ----------------------------------------------------------------------
 // constants and support types
 // ----------------------------------------------------------------------
+
+// REVU: move to options TODO
 const (
-	path_stdin               = "-"
-	harvester_open_file_wait = 5 * time.Second
-	open_file_retries        = 3
-	harvester_idle_wait      = time.Second * 55
-	harvester_read_wait      = time.Millisecond * 1000
+	path_stdin = "-"
 )
 
 // harvester initial offset seek mode.
@@ -35,20 +33,38 @@ const (
 	SEEK_NONE // for stdin
 )
 
+// TODO use this in prospector scan and maps too.
+// harvester  mode
+type HarvestMode int
+
+const (
+	NA_HARVEST_MODE HarvestMode = iota
+	NEW_FILE
+	ROTATED_FILE
+	KNOWN_FILE
+)
+
 // ----------------------------------------------------------------------
 // harvester
 // ----------------------------------------------------------------------
+type HarvesterConfig struct {
+	path         string
+	fields       map[string]string
+	offset       int64
+	seek_mode    SeekMode
+	harvest_mode HarvestMode
+	eof_deadline time.Duration
+	read_timeout time.Duration
+	open_timeout time.Duration
+	open_retries int
+}
 type harvester struct {
 	WorkerBase
-
-	path   string
-	fields map[string]string
+	HarvesterConfig
 
 	file     *os.File
 	fileinfo *os.FileInfo
-	offset   int64
 	linenum  uint64
-	mode     SeekMode
 }
 
 type Harvester interface {
@@ -58,14 +74,27 @@ type Harvester interface {
 // ----------------------------------------------------------------------
 // harvester API
 // ----------------------------------------------------------------------
-func NewHarvester(path string, init_offset int64, fields map[string]string, seekMode SeekMode) Harvester {
+func NewHarvester(path string, init_offset int64, fields map[string]string, seekMode SeekMode, harvestMode HarvestMode) Harvester {
 
 	name := nameFromPath(path)
+	config := HarvesterConfig{
+		path:         path,
+		fields:       fields,
+		offset:       init_offset,
+		seek_mode:    seekMode,
+		harvest_mode: harvestMode,
+
+		eof_deadline: Defaults.HARVESTER_EOF_DEADLINE,
+		read_timeout: Defaults.HARVESTER_IDLE_TIMEOUT, // TODO rename this opt
+		open_timeout: Defaults.HARVESTER_OPEN_TIMEOUT,
+		open_retries: Defaults.HARVESTER_OPEN_RETRIES,
+	}
 	worker := &harvester{
-		path:   path,
-		fields: fields,
-		offset: init_offset,
-		mode:   seekMode,
+		HarvesterConfig: config,
+		//		path:   path,
+		//		fields: fields,
+		//		offset: init_offset,
+		//		mode:   seekMode,
 	}
 	worker.WorkerBase = NewWorkerBase(worker, name, harvest)
 
@@ -75,7 +104,7 @@ func NewHarvester(path string, init_offset int64, fields map[string]string, seek
 func (w *harvester) Initialize() *WorkerErr {
 	/// initialize ////////////////////////////////////
 	var e error
-	w.file, w.offset, e = openFile(w.path, w.offset, w.mode)
+	w.file, w.offset, e = openFile(w.path, w.offset, w.seek_mode)
 	if e != nil {
 		return NewWorkerErrWithCause(E_INIT, "openFile", e)
 	}
@@ -106,7 +135,8 @@ func harvest(self interface{}, in0, out0 interface{}, err chan<- *WorkerErr) {
 
 	w.log("Begin harvesting %s at offset %d\n", w.path, w.offset)
 	reader := bufio.NewReaderSize(w.file, 1024)
-	deadline := time.Now().Add(harvester_idle_wait)
+	//	deadline := time.Now().Add(harvester_idle_wait)
+	deadline := time.Now().Add(w.eof_deadline)
 
 	var buff []byte
 	for {
@@ -125,7 +155,7 @@ func harvest(self interface{}, in0, out0 interface{}, err chan<- *WorkerErr) {
 					err <- NewWorkerErr(E_TIMEOUT, msg)
 					return
 				}
-				time.Sleep(harvester_read_wait)
+				time.Sleep(w.read_timeout)
 			case e != nil:
 				msg := fmt.Sprintf("ReadLine() error at offset %d", w.offset)
 				w.log(msg)
@@ -133,10 +163,10 @@ func harvest(self interface{}, in0, out0 interface{}, err chan<- *WorkerErr) {
 				return
 			case is_partial:
 				buff = append(buff, segment...)
-				deadline = time.Now().Add(harvester_idle_wait)
+				deadline = time.Now().Add(w.eof_deadline)
 			default:
 				buff = append(buff, segment...)
-				deadline = time.Now().Add(harvester_idle_wait)
+				deadline = time.Now().Add(w.eof_deadline)
 				line := string(buff) // TODO
 				buff = nil
 
@@ -178,7 +208,7 @@ func openFile(path string, offset int64, seekMode SeekMode) (file *os.File, xoff
 		return os.Stdin, 0, nil
 	}
 
-	file, e = openFileWaitRetry(path, harvester_open_file_wait, open_file_retries)
+	file, e = openFileWaitRetry(path, Defaults.HARVESTER_OPEN_TIMEOUT, Defaults.HARVESTER_OPEN_RETRIES)
 	if e != nil {
 		return
 	}

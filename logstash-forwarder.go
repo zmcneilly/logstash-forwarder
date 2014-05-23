@@ -44,8 +44,9 @@ func init() {
 	flag.IntVar(&options.SPOOL_BUFFER_SIZE, "spool-timeout", defaults.SPOOL_BUFFER_SIZE, "Maximum number of events to spool before a flush is forced")
 	flag.DurationVar(&options.SPOOL_IDLE_TIMEOUT, "spool-size", defaults.SPOOL_IDLE_TIMEOUT, "Maximum time wait to spool before a flush is forced")
 	flag.IntVar(&options.HARVESTER_BUFFER_SIZE, "harvest-size", defaults.HARVESTER_BUFFER_SIZE, "harvester buffer size")
-	flag.DurationVar(&options.HARVESTER_IDLE_TIMEOUT, "idle-flush-time", defaults.HARVESTER_IDLE_TIMEOUT, "Maximum time to wait for a full spool before flushing anyway")
+	flag.DurationVar(&options.HARVESTER_IDLE_TIMEOUT, "harvester eof-timeout", defaults.HARVESTER_IDLE_TIMEOUT, "Maximum time to wait for a full spool before flushing anyway")
 	flag.BoolVar(&options.HARVESTER_SEEK_FROM_HEAD, "from-beginning", defaults.HARVESTER_SEEK_FROM_HEAD, "Read new files from the beginning, instead of the end")
+	flag.DurationVar(&options.HARVESTER_EOF_DEADLINE, "harvester eof-deadline", defaults.HARVESTER_EOF_DEADLINE, "Maximum time to wait for a full spool before flushing anyway")
 
 	rand.Seed(time.Now().UnixNano())
 }

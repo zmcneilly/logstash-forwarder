@@ -138,8 +138,8 @@ func (p *prospecter) onShutdown(err chan<- *WorkerErr) {
 
 // creates a new Harvestor for the given path and adds it to
 // map of harvesters.
-func (p *prospecter) addNewHarvester(path string, offset int64) Harvester {
-	h := NewHarvester(path, offset, p.fileconfig.Fields, SEEK_HEAD)
+func (p *prospecter) addNewHarvester(path string, offset int64, harvestMode HarvestMode) Harvester {
+	h := NewHarvester(path, offset, p.fileconfig.Fields, SEEK_HEAD, harvestMode)
 	p.harvesters[h] = time.Now()
 	return h
 }
@@ -147,7 +147,7 @@ func (p *prospecter) addNewHarvester(path string, offset int64) Harvester {
 func (p *prospecter) addStdinHarvester(n int) error {
 	p.log("initialize harvester for <stdin> ..\n")
 
-	h := NewHarvester(path_stdin, 0, p.fileconfig.Fields, SEEK_NONE)
+	h := NewHarvester(path_stdin, 0, p.fileconfig.Fields, SEEK_NONE, NA_HARVEST_MODE)
 	if e := h.Initialize(); e != nil {
 		return e
 	}
@@ -177,7 +177,7 @@ func (p *prospecter) reinstateHarvesters(history map[string]*FileState) error {
 				match, _ := filepath.Match(pathglob, path)
 				if match {
 					p.log("resume harvester for %s at offset %d..\n", path, state.Offset)
-					h := NewHarvester(path, state.Offset, p.fileconfig.Fields, SEEK_CONTINUE)
+					h := NewHarvester(path, state.Offset, p.fileconfig.Fields, SEEK_CONTINUE, KNOWN_FILE)
 					if e := h.Initialize(); e != nil {
 						return NewWorkerErrWithCause(E_INIT, "failed to initialize harvester", e)
 					}
@@ -248,7 +248,7 @@ func (p *prospecter) scanPath(path string) (map[Harvester]string, error) {
 			} else {
 				// Most likely a new file. Harvest it!
 				p.log("Adding new harvester on new file: %s\n", file)
-				h := p.addNewHarvester(path, 0)
+				h := p.addNewHarvester(path, 0, NEW_FILE)
 				if e0 := h.Initialize(); e0 != nil {
 					return nil, fmt.Errorf("error initializing harvester for path: %s file: %s - error: %s", path, file, e0)
 				}
@@ -258,7 +258,7 @@ func (p *prospecter) scanPath(path string) (map[Harvester]string, error) {
 			p.log("Adding new harvester on rotated file: %s\n", file)
 			// TODO(sissel): log 'file rotated' or osmething
 			// Start a harvester on the path; a new file appeared with the same name.
-			h := p.addNewHarvester(path, 0)
+			h := p.addNewHarvester(path, 0, ROTATED_FILE)
 			if e0 := h.Initialize(); e0 != nil {
 				return nil, fmt.Errorf("error initializing harvester for path: %s file: %s - error: %s", path, file, e0)
 			}

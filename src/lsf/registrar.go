@@ -89,7 +89,7 @@ func register(self interface{}, in0, out0 interface{}, err chan<- *WorkerErr) {
 					Source: event.Source,
 					// take the offset + length of the line + newline char and
 					// save it as the new starting offset.
-//					Offset: event.Offset + int64(len(*event.Text)) + 1, // REVU this is a BUG TODO
+					//					Offset: event.Offset + int64(len(*event.Text)) + 1, // REVU this is a BUG TODO
 					Offset: event.Offset + int64(len(*event.Text)),
 					Inode:  ino,
 					Device: dev,

@@ -21,8 +21,11 @@ type Options struct {
 	PROSPECTOR_SCAN_DELAY    time.Duration
 	SPOOL_IDLE_TIMEOUT       time.Duration
 	HARVESTER_BUFFER_SIZE    int
-	HARVESTER_IDLE_TIMEOUT   time.Duration
 	HARVESTER_SEEK_FROM_HEAD bool
+	HARVESTER_IDLE_TIMEOUT   time.Duration // revu: rename to .._READ_TIMEOUT
+	HARVESTER_OPEN_TIMEOUT   time.Duration
+	HARVESTER_OPEN_RETRIES   int
+	HARVESTER_EOF_DEADLINE   time.Duration
 }
 
 var Defaults Options
@@ -43,6 +46,9 @@ func init() {
 	Defaults.HARVESTER_SEEK_FROM_HEAD = false
 	Defaults.HARVESTER_BUFFER_SIZE = 16 << 10 /* harvester buffer size 16kb buffer by default */
 	Defaults.HARVESTER_IDLE_TIMEOUT = time.Second * 5
+	Defaults.HARVESTER_EOF_DEADLINE = time.Hour * 24
+	Defaults.HARVESTER_OPEN_TIMEOUT = time.Second * 5
+	Defaults.HARVESTER_OPEN_RETRIES = 3
 }
 
 func (o *Options) display() {
@@ -55,7 +61,8 @@ func (o *Options) display() {
 	log.Printf("\t\tmax-spool-size:                <%d>", o.SPOOL_BUFFER_SIZE)
 	log.Printf("\t\tprospector scan delay (msec):  <%d>", o.PROSPECTOR_SCAN_DELAY/time.Millisecond)
 	log.Printf("\t\tspool timeout (msec):          <%d>", o.SPOOL_IDLE_TIMEOUT/time.Millisecond)
-	log.Printf("\t\tidle timeout  (msec):          <%d>", o.HARVESTER_IDLE_TIMEOUT/time.Millisecond)
+	log.Printf("\t\tharvester read timeout (msec): <%d>", o.HARVESTER_IDLE_TIMEOUT/time.Millisecond)
+	log.Printf("\t\tharvester EOF deadline (secs): <%d>", o.HARVESTER_EOF_DEADLINE/time.Second)
 	log.Printf("\t\tharvester buffer size:         <%d>", o.HARVESTER_BUFFER_SIZE)
 	log.Printf("\t\tscan files from end:           <%t>", !o.HARVESTER_SEEK_FROM_HEAD)
 }
