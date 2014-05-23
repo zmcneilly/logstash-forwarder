@@ -147,7 +147,7 @@ func (p *prospecter) addNewHarvester(path string, offset int64, harvestMode Harv
 func (p *prospecter) addStdinHarvester(n int) error {
 	p.log("initialize harvester for <stdin> ..\n")
 
-	h := NewHarvester(path_stdin, 0, p.fileconfig.Fields, SEEK_NONE, NA_HARVEST_MODE)
+	h := NewHarvester(path_stdin, 0, p.fileconfig.Fields, NA_SEEK_STREAM, NA_HARVEST_MODE)
 	if e := h.Initialize(); e != nil {
 		return e
 	}

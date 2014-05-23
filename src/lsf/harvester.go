@@ -27,11 +27,26 @@ const (
 type SeekMode int
 
 const (
-	SEEK_TAIL SeekMode = iota
+	NA_SEEK_STREAM SeekMode = iota // for streams
 	SEEK_CONTINUE
 	SEEK_HEAD
-	SEEK_NONE // for stdin
+	SEEK_TAIL
 )
+
+func (v SeekMode) String() string {
+	s := "BUG:UNKNOWN-SEEK-MODE"
+	switch v {
+	case NA_SEEK_STREAM:
+		s = "NA_SEEK_STREAM"
+	case SEEK_CONTINUE:
+		s = "SEEK_CONTINUE"
+	case SEEK_HEAD:
+		s = "SEEK_HEAD"
+	case SEEK_TAIL:
+		s = "SEEK_TAIL"
+	}
+	return fmt.Sprintf("SeekMode.%s", s)
+}
 
 // TODO use this in prospector scan and maps too.
 // harvester  mode
@@ -43,6 +58,21 @@ const (
 	ROTATED_FILE
 	KNOWN_FILE
 )
+
+func (v HarvestMode) String() string {
+	s := "BUG:UNKNOWN-HARVEST-MODE"
+	switch v {
+	case NA_HARVEST_MODE:
+		s = "NA_HARVEST_MODE"
+	case NEW_FILE:
+		s = "NEW_FILE"
+	case ROTATED_FILE:
+		s = "ROTATED_FILE"
+	case KNOWN_FILE:
+		s = "KNOWN_FILE"
+	}
+	return fmt.Sprintf("HarvestMode.%s", s)
+}
 
 // ----------------------------------------------------------------------
 // harvester
@@ -102,6 +132,9 @@ func NewHarvester(path string, init_offset int64, fields map[string]string, seek
 }
 
 func (w *harvester) Initialize() *WorkerErr {
+
+	w.log("Initializing. %s %s", w.seek_mode, w.harvest_mode)
+
 	/// initialize ////////////////////////////////////
 	var e error
 	w.file, w.offset, e = openFile(w.path, w.offset, w.seek_mode)
