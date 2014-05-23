@@ -81,7 +81,7 @@ func (p *Pipeline) Initialize() (inierror *WorkerErr) {
 	// create but do not start them
 	for _, fileconfig := range p.config.Files {
 		p.log("initialize prospector for %s ..\n", fileconfig.Paths)
-		prospector := NewProspecter(fileconfig, options.PROSPECTOR_SCAN_DELAY)
+		prospector := NewProspecter(fileconfig, options.PROSPECTOR_SCAN_DELAY, options.REGISTRAR_FILENAME)
 		if e := prospector.Initialize(); e != nil {
 			return NewWorkerErrWithCause(E_INIT, "failed to initialize prospector", e)
 		}

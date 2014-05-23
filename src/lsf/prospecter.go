@@ -38,7 +38,8 @@ type prospecter struct {
 	harvesters map[Harvester]time.Time // REVU: change: map[details]Harvester
 	period     time.Duration
 
-	h_stdin Harvester
+	h_stdin   Harvester
+	historyfn string
 }
 
 type Prospecter interface {
@@ -48,13 +49,14 @@ type Prospecter interface {
 // ----------------------------------------------------------------------
 // harvester API
 // ----------------------------------------------------------------------
-func NewProspecter(fileconfig FileConfig, scanPeriod time.Duration) Prospecter {
+func NewProspecter(fileconfig FileConfig, scanPeriod time.Duration, historyFilename string) Prospecter {
 	worker := &prospecter{
 		fileconfig: fileconfig,
 		harvesters: make(map[Harvester]time.Time),
 		fileinfo:   make(map[string]os.FileInfo),
 		period:     scanPeriod,
 		h_stdin:    nil,
+		historyfn:  historyFilename,
 	}
 	worker.WorkerBase = NewWorkerBase(worker, "prospector", prospect)
 	return worker
@@ -80,7 +82,7 @@ func (p *prospecter) Initialize() *WorkerErr {
 
 	// check history
 	// resume prior harvesters if any
-	history, e := getHistory(".logstash-forwarder") // REVU: this should be from options TODO
+	history, e := getHistory(p.historyfn)
 	if e != nil {
 		// assuming no history so we're done
 		p.log("assuming fresh start & ignoring error on getHistory() - e: %s", e)
