@@ -26,7 +26,7 @@ type prospecter struct {
 
 	fileconfig FileConfig
 	fileinfo   map[string]os.FileInfo
-	harvesters map[Harvester]time.Time
+	harvesters map[Harvester]time.Time // REVU: change: map[details]Harvester
 	period     time.Duration
 }
 
