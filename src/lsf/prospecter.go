@@ -27,13 +27,14 @@ func init() {
 type TrackingInfo struct {
 	fileinfo  map[string]os.FileInfo
 	harvester Harvester
+	// REVU: some sort of timestamp/last known state ..
 }
 
 type prospecter struct {
 	WorkerBase
 
 	fileconfig FileConfig
-	fileinfo   map[string]os.FileInfo
+	fileinfo   map[string]os.FileInfo  // REVU: change to trackinfo map[path]TrackingInfo
 	harvesters map[Harvester]time.Time // REVU: change: map[details]Harvester
 	period     time.Duration
 
@@ -79,7 +80,7 @@ func (p *prospecter) Initialize() *WorkerErr {
 
 	// check history
 	// resume prior harvesters if any
-	history, e := getHistory(".logstash-forwarder")
+	history, e := getHistory(".logstash-forwarder") // REVU: this should be from options TODO
 	if e != nil {
 		// assuming no history so we're done
 		p.log("assuming fresh start & ignoring error on getHistory() - e: %s", e)
