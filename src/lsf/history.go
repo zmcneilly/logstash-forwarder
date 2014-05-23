@@ -17,7 +17,7 @@ func getHistory(filename string) (map[string]*FileState, error) {
 	defer file.Close()
 
 	// decode json file and return history (map)
-	log.Println("[lsf] Loading registrar data (%s)", filename)
+	log.Printf("[lsf] Loading registrar data (%s)", filename)
 	history := make(map[string]*FileState)
 	codec := json.NewDecoder(file)
 	if e = codec.Decode(&history); e != nil {

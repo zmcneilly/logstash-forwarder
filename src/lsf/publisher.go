@@ -75,13 +75,9 @@ func publish(self interface{}, in0, out0 interface{}, err chan<- *WorkerErr) {
 	in := in0.(<-chan []*FileEvent)
 	out := out0.(chan<- []*FileEvent)
 
-	//	var buffer bytes.Buffer
-	//	var socket *tls.Conn
-	//	var sequence uint32
-	//	var err error
-
-	p.connect()
-	defer p.socket.Close()
+// TEMP - uncomment
+//	p.connect()
+//	defer p.socket.Close()
 
 	for {
 		select {
@@ -100,17 +96,19 @@ func publish(self interface{}, in0, out0 interface{}, err chan<- *WorkerErr) {
 
 				// publish events to server
 
-				e := p.publishEvents(events)
-				if e != nil {
-					/* todo error */
-					return
-				}
+// TEMP - uncomment
+//				e := p.publishEvents(events)
+//				if e != nil {
+//					/* todo error */
+//					return
+//				}
 
 				// forward events to registrar
 
 				sndtimeout := time.Second // Config this
 				timedout := sendFileEventArray("publisher-out", events, out, sndtimeout, p.WorkerBase, err)
 				if timedout {
+					p.log("sending %d events ..", len(events))
 					// TODO: err<- ... log()
 					return
 				}
