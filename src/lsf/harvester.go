@@ -99,6 +99,9 @@ type harvester struct {
 
 type Harvester interface {
 	Worker
+
+	SeekMode() SeekMode
+	HarvestMode() HarvestMode
 }
 
 // ----------------------------------------------------------------------
@@ -151,6 +154,12 @@ func (w *harvester) Initialize() *WorkerErr {
 	/// initialize ////////////////////////////////////
 
 	return nil
+}
+func (w *harvester) HarvestMode() HarvestMode {
+	return w.harvest_mode
+}
+func (w *harvester) SeekMode() SeekMode {
+	return w.seek_mode
 }
 
 // ----------------------------------------------------------------------

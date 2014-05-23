@@ -21,6 +21,14 @@ func init() {
 // ----------------------------------------------------------------------
 // prospecter
 // ----------------------------------------------------------------------
+
+// REVU: instantiate one per tracked file.
+// TODO: move HarvestMode here
+type TrackingInfo struct {
+	fileinfo  map[string]os.FileInfo
+	harvester Harvester
+}
+
 type prospecter struct {
 	WorkerBase
 
@@ -109,6 +117,11 @@ func prospect(self interface{}, in0, out0 interface{}, err chan<- *WorkerErr) {
 		case <-time.After(p.period):
 			p.log("scanning ..")
 			for _, path := range p.fileconfig.Paths {
+				// REVU: a bug seems to launch multiple harvesters for the same file
+				/* this call should merely identify new prospects
+				 * after call determine if harvesters for these are already running
+				 * TODO
+				 */
 				harvesters, e := p.scanPath(path)
 				if e != nil {
 					panic(NewWorkerErrWithCause(E_RECOVERED_PANIC, "goroutine defer block", e))
