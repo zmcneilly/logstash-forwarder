@@ -9,9 +9,11 @@ import (
 	"encoding/pem"
 	"errors"
 	"io/ioutil"
+	"log"
 	"math/big"
 	"net"
 	"os"
+	"sync"
 	"testing"
 	"time"
 )
@@ -52,6 +54,10 @@ fjUOGYo7F6eqfBcQColcE+BLKc1aKEAAEvzokQi72L7xuOenJUzpGaIJXGkmGZsV
 p/X0O4Qz0RTF
 -----END CERTIFICATE-----`
 
+var listening sync.WaitGroup
+
+func init() { log.SetFlags(0) }
+
 func makeCert(host string) tls.Certificate {
 	ca, err := tls.X509KeyPair([]byte(caCert), []byte(caKey))
 	caCert, err := x509.ParseCertificate(ca.Certificate[0])
@@ -91,74 +97,96 @@ func makeCert(host string) tls.Certificate {
 }
 
 func listenWithCert(hostname string, address string) {
-	// Establish a dummy TLS server
-	var serverConfig tls.Config
-	kp := makeCert(hostname)
 
-	serverConfig.Certificates = []tls.Certificate{kp}
-
-	listener, err := tls.Listen("tcp", address, &serverConfig)
-	if err != nil {
-		panic(err)
-	}
-	// Listen and handshake for a single connection
-	defer listener.Close()
-	conn, err := listener.Accept()
-	if err != nil {
-		panic(err)
-	}
-	defer conn.Close()
-	tlsconn, ok := conn.(*tls.Conn)
-	if !ok {
-		panic("conn should of *tls.Conn")
-	}
-	if err := tlsconn.Handshake(); err != nil {
-		return
-	}
-}
-
-func tryConnect(addr string, strict bool) chan error {
-	ch := make(chan error)
+	listening.Add(1)
 	go func() {
+		log.Println("DEBUG - start mock server ..")
+		// Establish a dummy TLS server
+		var serverConfig tls.Config
+		kp := makeCert(hostname)
 
-		caCertFile, err := ioutil.TempFile("", "logstash-forwarder-cacert%d")
+		serverConfig.Certificates = []tls.Certificate{kp}
+
+		listener, err := tls.Listen("tcp", address, &serverConfig)
 		if err != nil {
 			panic(err)
 		}
-		ioutil.WriteFile(caCertFile.Name(), []byte(caCert), os.ModeTemporary)
-		cleanup := func() {
-			os.Remove(caCertFile.Name())
+		// Listen and handshake for a single connection
+		defer listener.Close()
+		listening.Done()
+
+		conn, err := listener.Accept()
+		if err != nil {
+			panic(err)
 		}
+		defer conn.Close()
+		tlsconn, ok := conn.(*tls.Conn)
+		if !ok {
+			panic("conn should of *tls.Conn")
+		}
+		if err := tlsconn.Handshake(); err != nil {
+			return
+		}
+	}()
+	listening.Wait()
+}
+
+func tryConnect(addr string, strict bool) (errchan chan error) {
+	errchan = make(chan error)
+	go func() {
+
+		caCertFile, err := ioutil.TempFile("", "logstash-forwarder-cacert")
+		if err != nil {
+			panic(err)
+		}
+		defer func() { os.Remove(caCertFile.Name()) }()
+		ioutil.WriteFile(caCertFile.Name(), []byte(caCert), os.ModeTemporary)
 
 		// this can be messy because of localhost resolving to ipv6 addresses
-		// but there's no easy way to diasble v6 resolution here
+		// but there's no easy way to disable v6 resolution here
 		const wait = 5
-		timeout := time.AfterFunc(time.Second*wait, func() {
-			ch <- errors.New("Client couldn't connect & handshake")
-			cleanup()
-		})
-
-		sock := connect(&NetworkConfig{
-			SSLCA:   caCertFile.Name(),
+		const retryLimit = 3
+		tryAttempt := 0
+		exinfo := ""
+		config := &NetworkConfig{
+			SSLCA:     caCertFile.Name(),
 			SSLStrict: strict,
-			Servers: []string{addr},
-			Timeout: wait,
-			timeout: time.Second * wait,
-		})
-		timeout.Stop() // cancel the timeout panic
-		defer cleanup()
-		if sock == nil {
-			ch <- errors.New("connection should not be nil")
+			Servers:   []string{addr},
+			Timeout:   wait,
+			timeout:   time.Second * wait,
+		}
+
+		var socket *tls.Conn
+		for socket == nil && tryAttempt < retryLimit {
+			select {
+			case socket = <-doConnect(config):
+			case <-time.After(time.Second * wait):
+				log.Printf("INFO: Connect timeout: attempt: %d\n", tryAttempt)
+				tryAttempt++
+			}
+		}
+		if socket == nil {
+			errchan <- errors.New("Client connect failed. " + exinfo)
 			return
 		}
-		if !sock.ConnectionState().HandshakeComplete {
-			ch <- errors.New("handshake should be complete")
+		defer socket.Close()
+		log.Printf("INFO: Connected to %s\n", socket.RemoteAddr())
+
+		if !socket.ConnectionState().HandshakeComplete {
+			errchan <- errors.New("handshake should be complete")
 			return
 		}
-		defer sock.Close()
-		ch <- nil
+		errchan <- nil
 	}()
-	return ch
+	return errchan
+}
+
+func doConnect(config *NetworkConfig) <-chan *tls.Conn {
+	sockchan := make(chan *tls.Conn)
+	go func() {
+		sockchan <- connect(config)
+	}()
+	return sockchan
 }
 
 // ----------------------------------------------------------------------
@@ -169,29 +197,78 @@ func tryConnect(addr string, strict bool) chan error {
 // Server certificate is CN=localhost, signed by above CA, in test/server.crt, test/server.key
 
 func TestStrictConnectValidCertificate(t *testing.T) {
-	go listenWithCert("localhost", "0.0.0.0:19876")
+	log.Println("\n-- TestStrictConnectValidCertificate -- ")
+
+	listenWithCert("localhost", "0.0.0.0:19876")
 	if err := <-tryConnect("localhost:19876", strict); err != nil {
 		t.Fatal("Should have succeeded", err)
 	}
 }
-
 func TestStrictConnectMismatchedCN(t *testing.T) {
-	go listenWithCert("localalt", "0.0.0.0:19876")
+	log.Println("\n-- TestStrictConnectMismatchedCN -- ")
+
+	listenWithCert("localalt", "0.0.0.0:19876")
 	if err := <-tryConnect("localhost:19876", strict); err == nil {
 		t.Fatal("Should have failed but didn't!")
 	}
 }
 
 func TestStrictConnectToIpWithoutSAN(t *testing.T) {
-	go listenWithCert("localhost", "0.0.0.0:19876")
+	log.Println("\n-- TestStrictConnectToIpWithoutSAN -- ")
+
+	listenWithCert("localhost", "0.0.0.0:19876")
 	if err := <-tryConnect("127.0.0.1:19876", strict); err == nil {
 		t.Fatal("Should have failed but didn't!")
 	}
 }
 
 func TestStrictConnectToIpWithSAN(t *testing.T) {
-	go listenWithCert("127.0.0.1", "0.0.0.0:19876")
+	log.Println("\n-- TestStrictConnectToIpWithSAN -- ")
+
+	listenWithCert("127.0.0.1", "0.0.0.0:19876")
 	if err := <-tryConnect("127.0.0.1:19876", strict); err != nil {
 		t.Fatal("Should not have failed", err)
+	}
+}
+
+// ----------------------------------------------------------------------
+// not-strict
+// ----------------------------------------------------------------------
+
+// NOTE: these tests fails intermittently - not clear why.
+
+func TestInsecureConnectValidCertificate(t *testing.T) {
+	log.Println("\n-- TestInsecureConnectValidCertificate -- ")
+
+	listenWithCert("localhost", "0.0.0.0:19876")
+	if err := <-tryConnect("localhost:19876", insecure); err != nil {
+		t.Fatal("Should have succeeded", err)
+	}
+}
+
+func TestInsecureConnectMismatchedCN(t *testing.T) {
+	log.Println("\n-- TestInsecureConnectMismatchedCN -- ")
+
+	listenWithCert("localalt", "0.0.0.0:19876")
+	if err := <-tryConnect("localhost:19876", insecure); err != nil {
+		t.Fatal("Should have succeeded", err)
+	}
+}
+
+func TestInsecureConnectToIpWithoutSAN(t *testing.T) {
+	log.Println("\n-- TestInsecureConnectToIpWithoutSAN -- ")
+
+	listenWithCert("localhost", "0.0.0.0:19876")
+	if err := <-tryConnect("127.0.0.1:19876", insecure); err != nil {
+		t.Fatal("Should have succeeded", err)
+	}
+}
+
+func TestInsecureConnectToIpWithSAN(t *testing.T) {
+	log.Println("\n-- TestInsecureConnectToIpWithSAN -- ")
+
+	listenWithCert("127.0.0.1", "0.0.0.0:19876")
+	if err := <-tryConnect("127.0.0.1:19876", insecure); err != nil {
+		t.Fatal("Should have succeeded", err)
 	}
 }
