@@ -19,6 +19,29 @@ var configJson = `
     "servers": [ "localhost:5043" ],
     "ssl certificate": "./lumberjack.crt",
     "ssl key": "./lumberjack.key",
+    "ssl ca": "./lumberjack_ca.crt",
+    "ssl strict verify": true
+  },
+  "files": [
+    {
+      "paths": [
+        "/var/log/*.log",
+        "/var/log/messages"
+      ],
+      "fields": { "type": "syslog" }
+    }, {
+      "paths": [ "/var/log/apache2/access.log" ],
+      "fields": { "type": "apache" }
+    }
+  ]
+}
+`
+var configJson0 = `
+{
+  "network": {
+    "servers": [ "localhost:5043" ],
+    "ssl certificate": "./lumberjack.crt",
+    "ssl key": "./lumberjack.key",
     "ssl ca": "./lumberjack_ca.crt"
   },
   "files": [
@@ -45,6 +68,7 @@ var expected = struct {
 		SSLCertificate: "./lumberjack.crt",
 		SSLKey:         "./lumberjack.key",
 		SSLCA:          "./lumberjack_ca.crt",
+		SSLStrict:      true,
 	},
 	files: []FileConfig{
 		FileConfig{
@@ -96,6 +120,9 @@ func TestLoadConfig(t *testing.T) {
 	if config.Network.SSLCA != expected.network.SSLCA {
 		t.Errorf("SSLCA do not match")
 	}
+	if config.Network.SSLStrict != expected.network.SSLStrict {
+		t.Errorf("SSLStrict do not match")
+	}
 	// check files
 	for i := 0; i < len(expected.files); i++ {
 		for k, v := range expected.files[i].Fields {
@@ -111,6 +138,26 @@ func TestLoadConfig(t *testing.T) {
 	}
 }
 
+
+// tests main.LoadConfig
+func TestLoadConfig0(t *testing.T) {
+	// set it up
+	fname := writeConfFile([]byte(configJson0))
+	_, e := os.Stat(fname)
+	if e != nil {
+		testBug(e)
+	}
+
+	config, e := LoadConfig(fname)
+	if e != nil {
+		t.Errorf("filename:%s - error: %s", fname, e)
+	}
+
+	if config.Network.SSLStrict != false {
+		t.Errorf("SSLStrict default value should be false")
+	}
+}
+
 // -------------------------------------------------------------------
 // test support funcs
 // -------------------------------------------------------------------
@@ -118,7 +165,7 @@ func writeConfFile(data []byte) string {
 	fname := path.Join(os.TempDir(), "test-logstash-forwarder.conf")
 	e := ioutil.WriteFile(fname, data, os.FileMode(0644))
 	if e != nil {
-		panic("TESTBUG: " + e.Error())
+		testBug(e)
 	}
 	return fname
 }

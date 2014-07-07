@@ -16,6 +16,10 @@ import (
 	"time"
 )
 
+const strict bool = true
+
+const insecure bool = false
+
 const caKey = `-----BEGIN RSA PRIVATE KEY-----
 MIICXQIBAAKBgQDXQK+POFCtDlYgc2nQTnZ+WfaPQg1ms9JjomZ9vZXpqH9JaxBj
 jWKTyg7k6GOXpNbaET76nlWLtAKKofesOGwadil/HtyEwXxvXJY/UTdkqtwCFjPS
@@ -113,11 +117,11 @@ func listenWithCert(hostname string, address string) {
 	}
 }
 
-func tryConnect(addr string) chan error {
+func tryConnect(addr string, strict bool) chan error {
 	ch := make(chan error)
 	go func() {
 
-		caCertFile, err := ioutil.TempFile("", "logstash-forwarder-cacert")
+		caCertFile, err := ioutil.TempFile("", "logstash-forwarder-cacert%d")
 		if err != nil {
 			panic(err)
 		}
@@ -136,6 +140,7 @@ func tryConnect(addr string) chan error {
 
 		sock := connect(&NetworkConfig{
 			SSLCA:   caCertFile.Name(),
+			SSLStrict: strict,
 			Servers: []string{addr},
 			Timeout: wait,
 			timeout: time.Second * wait,
@@ -156,32 +161,37 @@ func tryConnect(addr string) chan error {
 	return ch
 }
 
+// ----------------------------------------------------------------------
+// Strict
+// ----------------------------------------------------------------------
+
 // CA certificate is CN=ca.logstash.test in test/ca.crt, test/ca.key
 // Server certificate is CN=localhost, signed by above CA, in test/server.crt, test/server.key
-func TestConnectValidCertificate(t *testing.T) {
+
+func TestStrictConnectValidCertificate(t *testing.T) {
 	go listenWithCert("localhost", "0.0.0.0:19876")
-	if err := <-tryConnect("localhost:19876"); err != nil {
+	if err := <-tryConnect("localhost:19876", strict); err != nil {
 		t.Fatal("Should have succeeded", err)
 	}
 }
 
-func TestConnectMismatchedCN(t *testing.T) {
+func TestStrictConnectMismatchedCN(t *testing.T) {
 	go listenWithCert("localalt", "0.0.0.0:19876")
-	if err := <-tryConnect("localhost:19876"); err == nil {
+	if err := <-tryConnect("localhost:19876", strict); err == nil {
 		t.Fatal("Should have failed but didn't!")
 	}
 }
 
-func TestConnectToIpWithoutSAN(t *testing.T) {
+func TestStrictConnectToIpWithoutSAN(t *testing.T) {
 	go listenWithCert("localhost", "0.0.0.0:19876")
-	if err := <-tryConnect("127.0.0.1:19876"); err == nil {
+	if err := <-tryConnect("127.0.0.1:19876", strict); err == nil {
 		t.Fatal("Should have failed but didn't!")
 	}
 }
 
-func TestConnectToIpWithSAN(t *testing.T) {
+func TestStrictConnectToIpWithSAN(t *testing.T) {
 	go listenWithCert("127.0.0.1", "0.0.0.0:19876")
-	if err := <-tryConnect("127.0.0.1:19876"); err != nil {
+	if err := <-tryConnect("127.0.0.1:19876", strict); err != nil {
 		t.Fatal("Should not have failed", err)
 	}
 }

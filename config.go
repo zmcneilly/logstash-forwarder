@@ -17,6 +17,7 @@ type NetworkConfig struct {
 	SSLCertificate string   `json:"ssl certificate"`
 	SSLKey         string   `json:"ssl key"`
 	SSLCA          string   `json:"ssl ca"`
+	SSLStrict      bool     `json:"ssl strict verify"`  // ISSUE-221: Go1.3: use strict verification on demand only.
 	Timeout        int64    `json:timeout`
 	timeout        time.Duration
 }

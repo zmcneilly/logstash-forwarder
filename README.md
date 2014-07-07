@@ -57,6 +57,13 @@ include them in your config.:
         # The path to your trusted ssl CA file. This is used
         # to authenticate your downstream server.
         "ssl ca": "./logstash-forwarder.crt",
+        
+        # Meaningful if using Go1.3 and later only.
+        # Defaults to false if ommited.
+        # If true, strict CA verification is applied.
+        # See http://golang.org/pkg/crypto/tls/#Config
+        # (tls.Config#InsecureSkipVerify) for details.
+        "ssl strict verify": {true | false}
 
         # Network timeout in seconds. This is most important for
         # logstash-forwarder determining whether to stop waiting for an
