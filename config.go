@@ -21,6 +21,7 @@ type NetworkConfig struct {
 	SSLCertificate string   `json:"ssl certificate"`
 	SSLKey         string   `json:"ssl key"`
 	SSLCA          string   `json:"ssl ca"`
+  SSLStrict      bool     `json:"ssl strict verify"` // Stolen from https://github.com/elasticsearch/logstash-forwarder/issues/221
 	Timeout        int64    `json:timeout`
 	timeout        time.Duration
 }
