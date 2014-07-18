@@ -202,7 +202,15 @@ func connect(config *NetworkConfig) (socket *tls.Conn) {
       continue
     }
 
-    tlsconfig.ServerName = host
+    // tlsconfig.ServerName = host
+  
+    if !config.SSLStrict {
+      log.Println("WARNING: TLS: InsecureSkipVerify: you are susceptible to MITM attacks. ")
+      tlsconfig.InsecureSkipVerify = true
+      tlsconfig.ServerName = ""
+    } else {
+      tlsconfig.ServerName = host
+    }
 
     socket = tls.Client(tcpsocket, &tlsconfig)
     socket.SetDeadline(time.Now().Add(config.timeout))
